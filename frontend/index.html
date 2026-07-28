@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resolution Hub</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header class="topbar">
+        <h1 class="logo">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="12" rx="2"></rect>
+                <path d="M8 20h8M12 16v4"></path>
+            </svg>
+            Resolution Hub
+        </h1>
+        <div class="topbar-actions">
+            <button id="about-btn" class="btn btn-icon" title="关于">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M12 11v5M12 8h.01"></path></svg>
+            </button>
+            <button id="displays-btn" class="btn btn-icon" title="显示器">
+                <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>
+            </button>
+            <button id="theme-btn" class="btn btn-icon" title="切换主题">
+                <svg id="theme-icon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"></path></svg>
+            </button>
+            <span class="topbar-sep"></span>
+            <button id="minimize-btn" class="btn btn-icon win-ctrl" title="最小化">
+                <svg viewBox="0 0 24 24"><path d="M5 12h14"></path></svg>
+            </button>
+            <button id="maximize-btn" class="btn btn-icon win-ctrl" title="最大化">
+                <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"></rect></svg>
+            </button>
+            <button id="close-btn" class="btn btn-icon win-ctrl win-close" title="关闭">
+                <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+            </button>
+        </div>
+    </header>
+
+    <div id="error-banner" class="error-banner hidden">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4M12 16h.01"></path></svg>
+        <span id="error-message"></span>
+        <button id="error-close-btn" class="btn btn-icon" title="关闭提示">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+        </button>
+    </div>
+
+    <main class="dashboard">
+        <section class="game-panel">
+            <div class="panel-header">
+                <div>
+                    <h2>游戏分辨率</h2>
+                    <p>从这里启动游戏，退出后自动恢复桌面</p>
+                </div>
+                <span id="profile-count" class="badge">0</span>
+                <button id="add-profile-btn" class="btn btn-primary">
+                    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+                    添加游戏
+                </button>
+            </div>
+            <div id="profile-list" class="profile-list">
+                <div class="skeleton-row"></div>
+                <div class="skeleton-row"></div>
+                <div class="skeleton-row"></div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="statusbar">
+        <button id="status-display-btn" class="status-display" title="修改默认分辨率">
+            <svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"></path><circle cx="16" cy="7" r="2"></circle><circle cx="8" cy="17" r="2"></circle></svg>
+            <span class="status-display-label">默认分辨率</span>
+            <span id="current-display-mode">正在读取</span>
+        </button>
+        <div class="runtime-state">
+            <span id="runtime-indicator" class="runtime-indicator"></span>
+            <span id="runtime-message">就绪</span>
+        </div>
+        <div class="status-actions">
+            <button id="cancel-wait-btn" class="btn btn-quiet hidden">
+                <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+                取消等待
+            </button>
+            <button id="restore-btn" class="btn btn-quiet" disabled>
+                <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg>
+                立即恢复
+            </button>
+        </div>
+    </footer>
+
+    <aside id="display-drawer" class="drawer hidden">
+        <div class="drawer-header">
+            <div>
+                <h2>显示器</h2>
+                <p>Windows 当前识别到的活动屏幕</p>
+            </div>
+            <button id="drawer-close-btn" class="btn btn-icon" title="关闭">
+                <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div id="display-list" class="drawer-body"></div>
+    </aside>
+    <div id="drawer-overlay" class="overlay hidden"></div>
+
+    <aside id="default-resolution-drawer" class="drawer resolution-drawer hidden">
+        <form id="default-resolution-form" class="resolution-drawer-form">
+            <div class="resolution-drawer-header">
+                <div class="resolution-drawer-title">
+                    <div>
+                        <h2>默认分辨率</h2>
+                        <p>桌面与游戏退出后使用的显示模式</p>
+                    </div>
+                    <button type="button" id="default-resolution-close-btn" class="btn btn-icon" title="关闭">
+                        <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <label class="resolution-display-field">
+                    <span>显示器</span>
+                    <select id="default-display-select" required></select>
+                </label>
+            </div>
+            <div class="resolution-mode-section">
+                <div class="resolution-mode-heading">
+                    <span>分辨率与刷新率</span>
+                    <small id="default-mode-count"></small>
+                </div>
+                <div id="default-mode-list" class="resolution-mode-list" role="radiogroup" aria-label="默认分辨率"></div>
+            </div>
+            <div class="resolution-drawer-footer">
+                <button type="submit" class="btn btn-primary">
+                    <svg viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"></path></svg>
+                    应用并设为默认
+                </button>
+            </div>
+        </form>
+    </aside>
+    <div id="default-resolution-overlay" class="overlay resolution-overlay hidden"></div>
+
+    <div id="profile-modal" class="modal hidden">
+        <form id="profile-form" class="modal-dialog">
+            <div class="modal-header">
+                <div>
+                    <h2 id="modal-title">添加游戏</h2>
+                    <p>设置启动命令和游戏期间使用的显示模式</p>
+                </div>
+                <button type="button" id="modal-close-btn" class="btn btn-icon" title="关闭">
+                    <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <input id="profile-id" type="hidden">
+
+                <div class="source-picker">
+                    <div class="source-question">
+                        <strong>游戏通常从哪里启动？</strong>
+                        <span>选择最接近你平时打开游戏的方式</span>
+                    </div>
+                    <div class="source-tabs" id="source-tabs">
+                        <button type="button" data-source="steam" class="active">
+                            <svg viewBox="0 0 24 24"><circle cx="8" cy="16" r="3"></circle><circle cx="17" cy="7" r="3"></circle><path d="m10.5 14.5 4-5M3 13l2.5 1.5"></path></svg>
+                            <span>
+                                <strong>Steam</strong>
+                                <small>从已安装游戏库选择</small>
+                            </span>
+                        </button>
+                        <button type="button" data-source="shortcut">
+                            <svg viewBox="0 0 24 24"><path d="M14 3h7v7M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+                            <span>
+                                <strong>登录器 / 启动器</strong>
+                                <small>Riot、Epic、Battle.net</small>
+                            </span>
+                        </button>
+                        <button type="button" data-source="browse">
+                            <svg viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+                            <span>
+                                <strong>本地游戏</strong>
+                                <small>直接打开游戏 EXE</small>
+                            </span>
+                        </button>
+                        <button type="button" data-source="recent">
+                            <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5M12 7v5l3 2"></path></svg>
+                            <span>
+                                <strong>最近运行</strong>
+                                <small>从活动窗口中识别</small>
+                            </span>
+                        </button>
+                    </div>
+
+                    <div id="source-steam" class="source-panel">
+                        <div class="source-toolbar">
+                            <div class="search-input">
+                                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.4-4.4"></path></svg>
+                                <input id="steam-search" type="search" placeholder="搜索已安装的 Steam 游戏">
+                            </div>
+                            <button type="button" id="refresh-steam-btn" class="btn btn-icon" title="刷新 Steam 游戏库">
+                                <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7L20 14"></path><path d="M20 8v6h-6"></path></svg>
+                            </button>
+                        </div>
+                        <div id="steam-game-list" class="source-list"></div>
+                    </div>
+
+                    <div id="source-recent" class="source-panel hidden">
+                        <div class="source-toolbar source-toolbar-copy">
+                            <span>最近出现过窗口的应用</span>
+                            <button type="button" id="refresh-recent-btn" class="btn btn-icon" title="刷新最近应用">
+                                <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7L20 14"></path><path d="M20 8v6h-6"></path></svg>
+                            </button>
+                        </div>
+                        <div id="recent-app-list" class="source-list"></div>
+                    </div>
+
+                    <div id="source-browse" class="source-panel hidden">
+                        <button type="button" id="source-browse-btn" class="browse-source-button">
+                            <svg viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+                            <span>选择游戏可执行文件</span>
+                        </button>
+                    </div>
+
+                    <div id="source-shortcut" class="source-panel hidden">
+                        <div class="launcher-source">
+                            <button type="button" id="valorant-preset-btn" class="launcher-preset">
+                                <span class="launcher-preset-mark">V</span>
+                                <span>
+                                    <strong>无畏契约</strong>
+                                    <small>选择 Riot/VALORANT 快捷方式</small>
+                                </span>
+                            </button>
+                            <button type="button" id="source-shortcut-btn" class="browse-source-button compact">
+                                <svg viewBox="0 0 24 24"><path d="M14 3h7v7M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+                                <span>选择其他快捷方式</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="selected-source" class="selected-source hidden">
+                    <div class="selected-source-icon" id="selected-source-icon">G</div>
+                    <div>
+                        <strong id="selected-source-name"></strong>
+                        <span id="selected-source-detail"></span>
+                    </div>
+                    <span id="selected-source-type" class="source-tag"></span>
+                </div>
+
+                <label class="field">
+                    <span>游戏名称</span>
+                    <input id="game-name" type="text" maxlength="80" placeholder="例如：Counter-Strike 2" required>
+                </label>
+
+                <label class="field">
+                    <span>游戏主进程</span>
+                    <div class="process-input">
+                        <input id="process-name" type="text" placeholder="例如：cs2.exe" required>
+                        <button id="detect-process-btn" type="button" class="btn btn-secondary">
+                            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="2"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+                            <span id="detect-process-label">启动并识别</span>
+                        </button>
+                    </div>
+                </label>
+                <div id="process-hint" class="process-hint hidden">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 8h.01"></path></svg>
+                    <span id="process-hint-text">首次添加：点击“启动并识别”，然后正常进入游戏。识别期间不会切换分辨率。</span>
+                </div>
+                <div id="detect-status" class="detect-status hidden"></div>
+                <div id="process-candidates" class="process-candidates hidden"></div>
+
+                <div class="form-grid">
+                    <label class="field">
+                        <span>目标显示器</span>
+                        <select id="display-select" required></select>
+                    </label>
+                    <label class="field">
+                        <span>分辨率与刷新率</span>
+                        <select id="mode-select" required></select>
+                    </label>
+                </div>
+
+                <label class="field compact-field">
+                    <span>退出后恢复延迟</span>
+                    <div class="unit-input">
+                        <input id="restore-delay" type="number" min="0" max="30" step="1" value="2">
+                        <span>秒</span>
+                    </div>
+                </label>
+
+                <details class="advanced-settings">
+                    <summary>启动与切换设置</summary>
+
+                    <div id="executable-fields" class="launch-fields">
+                        <label class="field field-wide">
+                            <span>游戏 EXE</span>
+                            <div class="input-action">
+                                <input id="game-executable" type="text" placeholder="选择游戏可执行文件">
+                                <button id="browse-executable-btn" type="button" class="btn btn-icon" title="选择 EXE">
+                                    <svg viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+                                </button>
+                            </div>
+                        </label>
+                        <label class="field field-wide">
+                            <span>启动参数</span>
+                            <input id="game-arguments" type="text" placeholder="可选">
+                        </label>
+                        <label class="field field-wide">
+                            <span>工作目录</span>
+                            <input id="working-directory" type="text" placeholder="默认使用 EXE 所在目录">
+                        </label>
+                    </div>
+
+                    <div id="steam-fields" class="launch-fields hidden">
+                        <label class="field">
+                            <span>Steam App ID</span>
+                            <input id="steam-app-id" type="text" inputmode="numeric" placeholder="例如：730">
+                        </label>
+                    </div>
+
+                    <div id="shortcut-fields" class="launch-fields hidden">
+                        <label class="field field-wide">
+                            <span>启动器或游戏快捷方式</span>
+                            <div class="input-action">
+                                <input id="shortcut-path" type="text" placeholder=".lnk 或 .url">
+                                <button id="browse-shortcut-btn" type="button" class="btn btn-icon" title="选择快捷方式">
+                                    <svg viewBox="0 0 24 24"><path d="M14 3h7v7M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
+                                </button>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="form-grid">
+                        <label class="field">
+                            <span>分辨率切换时机</span>
+                            <select id="switch-timing">
+                                <option value="beforeLaunch">启动命令之前</option>
+                                <option value="onProcessDetected">检测到游戏进程时</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>等待游戏启动</span>
+                            <div class="unit-input">
+                                <input id="launch-timeout" type="number" min="1" max="60" step="1" value="10">
+                                <span>分钟</span>
+                            </div>
+                        </label>
+                    </div>
+                </details>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" id="modal-cancel-btn" class="btn btn-secondary">取消</button>
+                <button type="submit" class="btn btn-primary">
+                    <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><path d="M17 21v-8H7v8M7 3v5h8"></path></svg>
+                    保存
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <div id="about-modal" class="about-modal hidden">
+        <div class="about-card">
+            <div class="about-icon">
+                <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+            </div>
+            <h2>Resolution Hub</h2>
+            <p class="about-ver">v0.1.0</p>
+            <p class="about-desc">游戏玩家的显示模式启动器</p>
+            <div class="about-tech">
+                <span>Rust</span><span>Tauri 2</span><span>Windows</span>
+            </div>
+            <label class="about-setting">
+                <span class="about-setting-copy">
+                    <strong>开机自启</strong>
+                    <small>登录 Windows 后自动启动</small>
+                </span>
+                <span class="switch-control">
+                    <input id="auto-start-toggle" type="checkbox" role="switch">
+                    <span class="switch-track" aria-hidden="true"></span>
+                </span>
+            </label>
+            <p class="about-author">开发者：Juice & Codex</p>
+            <button id="about-close-btn" class="btn btn-secondary">关闭</button>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
