@@ -1,6 +1,7 @@
 {
   "name": "resolution-hub",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",

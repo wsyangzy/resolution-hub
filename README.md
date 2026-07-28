@@ -129,3 +129,7 @@ HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 - 启动器模式依赖游戏主进程名；首次添加时建议使用“启动并识别”。
 - 当前不包含系统托盘和后台静默启动。
 - 仅面向 Windows，显示模式切换依赖 Windows Display API。
+
+## 许可证
+
+本项目基于 [MIT License](LICENSE) 开源。
