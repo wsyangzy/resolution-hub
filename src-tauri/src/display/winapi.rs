@@ -14,10 +14,11 @@ use windows::{
         },
         Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS},
         Graphics::Gdi::{
-            CDS_TEST, CDS_TYPE, ChangeDisplaySettingsExW, DEVMODEW, DISP_CHANGE_SUCCESSFUL,
-            DISPLAY_DEVICE_ACTIVE, DISPLAY_DEVICE_PRIMARY_DEVICE, DISPLAY_DEVICEW, DM_BITSPERPEL,
-            DM_DISPLAYFREQUENCY, DM_PELSHEIGHT, DM_PELSWIDTH, ENUM_CURRENT_SETTINGS,
-            ENUM_DISPLAY_SETTINGS_MODE, EnumDisplayDevicesW, EnumDisplaySettingsW,
+            CDS_TEST, CDS_TYPE, CDS_UPDATEREGISTRY, ChangeDisplaySettingsExW, DEVMODEW,
+            DISP_CHANGE_SUCCESSFUL, DISPLAY_DEVICE_ACTIVE, DISPLAY_DEVICE_PRIMARY_DEVICE,
+            DISPLAY_DEVICEW, DM_BITSPERPEL, DM_DISPLAYFREQUENCY, DM_PELSHEIGHT, DM_PELSWIDTH,
+            ENUM_CURRENT_SETTINGS, ENUM_DISPLAY_SETTINGS_MODE, EnumDisplayDevicesW,
+            EnumDisplaySettingsW,
         },
     },
     core::PCWSTR,
@@ -226,7 +227,7 @@ pub fn enumerate_modes(device_name: &str) -> Result<Vec<DisplayMode>, String> {
     }
 }
 
-pub fn switch_mode(target: &DisplayMode) -> Result<(), String> {
+fn switch_mode_with_flags(target: &DisplayMode, flags: CDS_TYPE) -> Result<(), String> {
     let mut index = 0;
     let mut selected = None;
 
@@ -262,17 +263,19 @@ pub fn switch_mode(target: &DisplayMode) -> Result<(), String> {
     }
 
     let result = unsafe {
-        ChangeDisplaySettingsExW(
-            PCWSTR(device.as_ptr()),
-            Some(&mode),
-            None,
-            CDS_TYPE(0),
-            None,
-        )
+        ChangeDisplaySettingsExW(PCWSTR(device.as_ptr()), Some(&mode), None, flags, None)
     };
     if result == DISP_CHANGE_SUCCESSFUL {
         Ok(())
     } else {
         Err(format!("切换显示模式失败，错误码 {}", result.0))
     }
+}
+
+pub fn switch_mode(target: &DisplayMode) -> Result<(), String> {
+    switch_mode_with_flags(target, CDS_TYPE(0))
+}
+
+pub fn switch_mode_persistent(target: &DisplayMode) -> Result<(), String> {
+    switch_mode_with_flags(target, CDS_UPDATEREGISTRY)
 }

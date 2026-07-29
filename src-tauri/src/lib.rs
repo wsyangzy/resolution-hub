@@ -52,7 +52,7 @@ fn set_default_display_mode(
         })
         .ok_or_else(|| "所选显示模式已不可用，请刷新后重试".to_string())?;
 
-    display::switch_mode(&selected)?;
+    display::switch_mode_persistent(&selected)?;
     let current = display::current_mode(&selected.device_name)?;
     if current.width != selected.width
         || current.height != selected.height
