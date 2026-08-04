@@ -140,7 +140,8 @@ impl RuntimeManager {
         generation: u64,
         app: &AppHandle,
     ) -> Result<(), String> {
-        let already_running = process::is_running(&game.process_name);
+        let mut game_pid = process::find_pid(&game.process_name);
+        let already_running = game_pid.is_some();
         let switch_timing = game.effective_switch_timing();
 
         if already_running {
@@ -203,7 +204,7 @@ impl RuntimeManager {
 
             let timeout_sec = game.launch_timeout_sec.clamp(30, 3_600);
             let wait_deadline = Instant::now() + Duration::from_secs(timeout_sec);
-            while !process::is_running(&game.process_name) {
+            while game_pid.is_none() {
                 if !self.is_current(generation) {
                     return Ok(());
                 }
@@ -212,6 +213,10 @@ impl RuntimeManager {
                         "{timeout_sec} 秒内未检测到进程 {}",
                         game.process_name
                     ));
+                }
+                game_pid = process::find_pid(&game.process_name);
+                if game_pid.is_some() {
+                    break;
                 }
                 thread::sleep(Duration::from_millis(250));
             }
@@ -238,7 +243,19 @@ impl RuntimeManager {
             app,
         );
 
-        while process::is_running(&game.process_name) {
+        let mut use_polling_fallback = false;
+        while let Some(pid) = game_pid {
+            if !process::wait_for_exit(pid) {
+                use_polling_fallback = true;
+                break;
+            }
+            if !self.is_current(generation) {
+                return Ok(());
+            }
+            game_pid = process::find_pid(&game.process_name);
+        }
+
+        while use_polling_fallback && process::is_running(&game.process_name) {
             if !self.is_current(generation) {
                 return Ok(());
             }
