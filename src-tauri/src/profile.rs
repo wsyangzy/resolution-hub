@@ -4,7 +4,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::model::{AppSettings, DisplayMode, GameProfile, LaunchType, PendingRestore};
+use crate::model::{
+    AppSettings, CloseBehavior, DisplayMode, GameProfile, LaunchType, MinimizeBehavior,
+    PendingRestore,
+};
 
 pub(crate) fn app_dir() -> Result<PathBuf, String> {
     let base = std::env::var_os("APPDATA")
@@ -156,6 +159,12 @@ pub fn load_settings() -> Result<AppSettings, String> {
     serde_json::from_str(&content).map_err(|e| format!("解析设置失败：{e}"))
 }
 
+fn save_settings(settings: &AppSettings) -> Result<(), String> {
+    let content =
+        serde_json::to_string_pretty(settings).map_err(|e| format!("序列化设置失败：{e}"))?;
+    fs::write(settings_path()?, content).map_err(|e| format!("保存设置失败：{e}"))
+}
+
 pub fn save_default_display_mode(mode: DisplayMode) -> Result<AppSettings, String> {
     let mut settings = load_settings()?;
     settings
@@ -163,9 +172,27 @@ pub fn save_default_display_mode(mode: DisplayMode) -> Result<AppSettings, Strin
         .retain(|item| item.device_name != mode.device_name);
     settings.default_display_modes.push(mode);
 
-    let content =
-        serde_json::to_string_pretty(&settings).map_err(|e| format!("序列化设置失败：{e}"))?;
-    fs::write(settings_path()?, content).map_err(|e| format!("保存设置失败：{e}"))?;
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+pub fn save_close_behavior(
+    close_behavior: CloseBehavior,
+    confirm_close_behavior: Option<bool>,
+    minimize_behavior: Option<MinimizeBehavior>,
+) -> Result<AppSettings, String> {
+    let mut settings = load_settings()?;
+    settings.close_behavior = match close_behavior {
+        CloseBehavior::Ask => CloseBehavior::HideToTray,
+        behavior => behavior,
+    };
+    if let Some(confirm) = confirm_close_behavior {
+        settings.confirm_close_behavior = confirm;
+    }
+    if let Some(minimize) = minimize_behavior {
+        settings.minimize_behavior = minimize;
+    }
+    save_settings(&settings)?;
     Ok(settings)
 }
 

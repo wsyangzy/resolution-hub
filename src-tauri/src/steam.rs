@@ -48,6 +48,101 @@ pub fn list_installed_games() -> Result<Vec<SteamGame>, String> {
     Ok(games)
 }
 
+pub(crate) fn cached_icon(app_id: &str) -> Option<(String, Vec<u8>)> {
+    if app_id.is_empty() || !app_id.chars().all(|character| character.is_ascii_digit()) {
+        return None;
+    }
+
+    let cache = locate_steam()?.join("appcache").join("librarycache");
+    for extension in ["jpg", "png"] {
+        let legacy = cache.join(format!("{app_id}_icon.{extension}"));
+        if let Some(icon) = read_icon(&legacy) {
+            return Some(icon);
+        }
+    }
+
+    let directory = cache.join(app_id);
+    let hashed_icon = fs::read_dir(directory)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            matches!(
+                path.extension()
+                    .and_then(|extension| extension.to_str())
+                    .map(|extension| extension.to_ascii_lowercase()),
+                Some(extension) if matches!(extension.as_str(), "jpg" | "jpeg" | "png")
+            ) && path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .is_some_and(is_icon_hash)
+        })
+        .min_by_key(|path| {
+            path.metadata()
+                .map(|metadata| metadata.len())
+                .unwrap_or(u64::MAX)
+        })?;
+    read_icon(&hashed_icon)
+}
+
+pub(crate) fn executable_path(app_id: &str, process_name: &str) -> Option<PathBuf> {
+    if app_id.is_empty()
+        || !app_id.chars().all(|character| character.is_ascii_digit())
+        || process_name.is_empty()
+    {
+        return None;
+    }
+
+    let install_dir = list_installed_games()
+        .ok()?
+        .into_iter()
+        .find(|game| game.app_id == app_id)?
+        .install_dir;
+    find_executable(Path::new(&install_dir), process_name)
+}
+
+fn find_executable(root: &Path, process_name: &str) -> Option<PathBuf> {
+    let mut directories = vec![root.to_path_buf()];
+    while let Some(directory) = directories.pop() {
+        let Ok(entries) = fs::read_dir(directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                directories.push(entry.path());
+            } else if file_type.is_file()
+                && entry
+                    .file_name()
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case(process_name)
+            {
+                return Some(entry.path());
+            }
+        }
+    }
+    None
+}
+
+fn is_icon_hash(stem: &str) -> bool {
+    stem.len() == 40 && stem.chars().all(|character| character.is_ascii_hexdigit())
+}
+
+fn read_icon(path: &Path) -> Option<(String, Vec<u8>)> {
+    let mime_type = match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        _ => return None,
+    };
+    let metadata = path.metadata().ok()?;
+    if metadata.len() == 0 || metadata.len() > 256 * 1024 {
+        return None;
+    }
+    Some((mime_type.to_string(), fs::read(path).ok()?))
+}
+
 fn locate_steam() -> Option<PathBuf> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok(key) = hkcu.open_subkey("Software\\Valve\\Steam") {
@@ -118,7 +213,20 @@ fn object_string<'a>(object: &'a Obj<'a>, key: &str) -> Option<&'a str> {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use super::{parse_library_paths, parse_manifest_content};
+    use super::{find_executable, is_icon_hash, parse_library_paths, parse_manifest_content};
+
+    #[test]
+    fn finds_a_process_executable_below_an_install_directory() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let executable = find_executable(&source, "WINAPI.RS").expect("file should be found");
+        assert!(executable.ends_with(Path::new("display").join("winapi.rs")));
+    }
+
+    #[test]
+    fn recognizes_steam_icon_cache_hashes() {
+        assert!(is_icon_hash("b6018068070ab0e23561694c11f7950dd6f4c752"));
+        assert!(!is_icon_hash("library_600x900"));
+    }
 
     #[test]
     fn parses_steam_library_folders() {

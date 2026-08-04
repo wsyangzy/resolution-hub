@@ -25,11 +25,97 @@ pub struct DisplayInfo {
     pub current_mode: DisplayMode,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CloseBehavior {
+    #[default]
+    Ask,
+    HideToTray,
+    Exit,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MinimizeBehavior {
+    #[default]
+    Taskbar,
+    HideToTray,
+}
+
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
-    #[serde(default)]
     pub default_display_modes: Vec<DisplayMode>,
+    pub minimize_behavior: MinimizeBehavior,
+    pub close_behavior: CloseBehavior,
+    pub confirm_close_behavior: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            default_display_modes: Vec::new(),
+            minimize_behavior: MinimizeBehavior::Taskbar,
+            close_behavior: CloseBehavior::HideToTray,
+            confirm_close_behavior: true,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredAppSettings {
+    #[serde(default)]
+    default_display_modes: Vec<DisplayMode>,
+    #[serde(default)]
+    minimize_behavior: MinimizeBehavior,
+    #[serde(default)]
+    close_behavior: CloseBehavior,
+    #[serde(default)]
+    confirm_close_behavior: Option<bool>,
+}
+
+impl<'de> Deserialize<'de> for AppSettings {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let stored = StoredAppSettings::deserialize(deserializer)?;
+        let legacy_ask = stored.close_behavior == CloseBehavior::Ask;
+        Ok(Self {
+            default_display_modes: stored.default_display_modes,
+            minimize_behavior: stored.minimize_behavior,
+            close_behavior: if legacy_ask {
+                CloseBehavior::HideToTray
+            } else {
+                stored.close_behavior
+            },
+            confirm_close_behavior: stored.confirm_close_behavior.unwrap_or(legacy_ask),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationIconRequest {
+    #[serde(default)]
+    pub executable: String,
+    #[serde(default)]
+    pub shortcut_path: String,
+    #[serde(default)]
+    pub steam_app_id: String,
+    #[serde(default)]
+    pub process_name: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationIcon {
+    pub kind: String,
+    pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub data: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -157,7 +243,9 @@ pub struct RuntimeStatus {
 
 #[cfg(test)]
 mod tests {
-    use super::{GameProfile, LaunchType, SwitchTiming};
+    use super::{
+        AppSettings, CloseBehavior, GameProfile, LaunchType, MinimizeBehavior, SwitchTiming,
+    };
 
     #[test]
     fn launch_type_uses_frontend_names() {
@@ -201,5 +289,35 @@ mod tests {
             Some(SwitchTiming::OnProcessDetected)
         ));
         assert_eq!(profile.launch_timeout_sec, 600);
+    }
+
+    #[test]
+    fn old_settings_keep_close_behavior_compatibility() {
+        let unconfigured: AppSettings =
+            serde_json::from_str(r#"{"defaultDisplayModes":[]}"#).unwrap();
+        let configured: AppSettings =
+            serde_json::from_str(r#"{"defaultDisplayModes":[],"closeBehavior":"exit"}"#).unwrap();
+        let current: AppSettings = serde_json::from_str(
+            r#"{"defaultDisplayModes":[],"closeBehavior":"hideToTray","confirmCloseBehavior":true}"#,
+        )
+        .unwrap();
+
+        assert_eq!(unconfigured.close_behavior, CloseBehavior::HideToTray);
+        assert_eq!(unconfigured.minimize_behavior, MinimizeBehavior::Taskbar);
+        assert!(unconfigured.confirm_close_behavior);
+        assert_eq!(configured.close_behavior, CloseBehavior::Exit);
+        assert_eq!(configured.minimize_behavior, MinimizeBehavior::Taskbar);
+        assert!(!configured.confirm_close_behavior);
+        assert_eq!(current.close_behavior, CloseBehavior::HideToTray);
+        assert_eq!(current.minimize_behavior, MinimizeBehavior::Taskbar);
+        assert!(current.confirm_close_behavior);
+        assert_eq!(
+            serde_json::to_string(&CloseBehavior::HideToTray).unwrap(),
+            r#""hideToTray""#
+        );
+        assert_eq!(
+            serde_json::to_string(&CloseBehavior::Exit).unwrap(),
+            r#""exit""#
+        );
     }
 }

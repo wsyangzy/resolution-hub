@@ -1,5 +1,7 @@
 /node_modules
+/dist
 /dist-portable
+/coverage
 /src-tauri/gen
 /src-tauri/target
 /target

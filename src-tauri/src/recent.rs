@@ -3,8 +3,7 @@ use std::{
     fs,
     path::Path,
     sync::{Mutex, OnceLock},
-    thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use windows::{
@@ -22,25 +21,9 @@ use crate::{model::RecentApplication, process, profile};
 
 static HISTORY: OnceLock<Mutex<Vec<RecentApplication>>> = OnceLock::new();
 
-pub fn initialize() {
-    let _ = history();
-    refresh();
-    thread::spawn(|| {
-        let mut ticks = 0u32;
-        loop {
-            thread::sleep(Duration::from_secs(4));
-            refresh();
-            ticks += 1;
-            if ticks >= 8 {
-                persist();
-                ticks = 0;
-            }
-        }
-    });
-}
-
 pub fn list() -> Vec<RecentApplication> {
     refresh();
+    persist();
     let mut applications = history()
         .lock()
         .map(|items| items.clone())

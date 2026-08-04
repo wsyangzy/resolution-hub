@@ -2,6 +2,7 @@ mod autostart;
 mod detector;
 mod dialog;
 mod display;
+mod icon;
 mod launcher;
 mod model;
 mod process;
@@ -11,11 +12,16 @@ mod runtime;
 mod steam;
 
 use model::{
-    AppSettings, DetectLaunchRequest, DisplayInfo, DisplayMode, GameProfile, PendingRestore,
-    RecentApplication, RuntimeStatus, SteamGame,
+    AppSettings, ApplicationIcon, ApplicationIconRequest, CloseBehavior, DetectLaunchRequest,
+    DisplayInfo, DisplayMode, GameProfile, MinimizeBehavior, PendingRestore, RecentApplication,
+    RuntimeStatus, SteamGame,
 };
 use runtime::RuntimeManager;
-use tauri::State;
+use tauri::{
+    Emitter, Manager, State,
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+};
 
 #[tauri::command]
 fn enumerate_displays() -> Result<Vec<DisplayInfo>, String> {
@@ -64,6 +70,15 @@ fn set_default_display_mode(
 }
 
 #[tauri::command]
+fn set_close_behavior(
+    close_behavior: CloseBehavior,
+    confirm_close_behavior: Option<bool>,
+    minimize_behavior: Option<MinimizeBehavior>,
+) -> Result<AppSettings, String> {
+    profile::save_close_behavior(close_behavior, confirm_close_behavior, minimize_behavior)
+}
+
+#[tauri::command]
 fn get_auto_start_enabled() -> Result<bool, String> {
     autostart::is_enabled()
 }
@@ -106,6 +121,14 @@ fn list_steam_games() -> Result<Vec<SteamGame>, String> {
 #[tauri::command]
 fn list_recent_apps() -> Vec<RecentApplication> {
     recent::list()
+}
+
+#[tauri::command]
+async fn get_application_icon(request: ApplicationIconRequest) -> Option<ApplicationIcon> {
+    tauri::async_runtime::spawn_blocking(move || icon::load(&request))
+        .await
+        .ok()
+        .flatten()
 }
 
 #[tauri::command]
@@ -159,8 +182,15 @@ fn cancel_launch_wait(
 }
 
 #[tauri::command]
-fn win_minimize(window: tauri::Window) {
-    let _ = window.minimize();
+fn win_minimize(window: tauri::Window) -> Result<(), String> {
+    match profile::load_settings()?.minimize_behavior {
+        MinimizeBehavior::Taskbar => window
+            .minimize()
+            .map_err(|error| format!("最小化主窗口失败：{error}")),
+        MinimizeBehavior::HideToTray => window
+            .hide()
+            .map_err(|error| format!("隐藏主窗口失败：{error}")),
+    }
 }
 
 #[tauri::command]
@@ -173,20 +203,85 @@ fn win_toggle_maximize(window: tauri::Window) {
 }
 
 #[tauri::command]
-fn win_close(window: tauri::Window) {
-    let _ = window.close();
+fn win_hide(window: tauri::Window) -> Result<(), String> {
+    window
+        .hide()
+        .map_err(|error| format!("隐藏主窗口失败：{error}"))
+}
+
+#[tauri::command]
+fn win_close(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
+    let open = MenuItem::with_id(app, "tray-open", "打开 Resolution Hub", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let exit = MenuItem::with_id(app, "tray-exit", "退出程序", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &separator, &exit])?;
+
+    let mut tray = TrayIconBuilder::with_id("resolution-hub")
+        .menu(&menu)
+        .tooltip("Resolution Hub")
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "tray-open" => show_main_window(app),
+            "tray-exit" => {
+                show_main_window(app);
+                let _ = app.emit("tray-exit-requested", ());
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                }
+            ) {
+                show_main_window(tray.app_handle());
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon().cloned() {
+        tray = tray.icon(icon);
+    }
+    tray.build(app)?;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    recent::initialize();
     tauri::Builder::default()
         .manage(RuntimeManager::default())
+        .setup(|app| {
+            setup_tray(app)?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && let tauri::WindowEvent::CloseRequested { api, .. } = event
+            {
+                api.prevent_close();
+                let _ = window.emit("window-close-requested", ());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             enumerate_displays,
             enumerate_display_modes,
             get_settings,
             set_default_display_mode,
+            set_close_behavior,
             get_auto_start_enabled,
             set_auto_start_enabled,
             list_profiles,
@@ -196,6 +291,7 @@ pub fn run() {
             select_shortcut,
             list_steam_games,
             list_recent_apps,
+            get_application_icon,
             open_launch_source,
             detect_game_process,
             launch_profile,
@@ -205,6 +301,7 @@ pub fn run() {
             cancel_launch_wait,
             win_minimize,
             win_toggle_maximize,
+            win_hide,
             win_close,
         ])
         .run(tauri::generate_context!())
