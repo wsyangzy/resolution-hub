@@ -68,6 +68,7 @@ Resolution Hub 是一款 Windows 游戏分辨率启动器。它从统一界面�
 - 保存异常恢复点；程序意外退出后，下次启动会提示恢复桌面模式。
 - 支持取消启动等待、配置等待超时以及手动“立即恢复”。
 - 支持当前用户的 Windows 开机自启开关。
+- 支持关闭到系统托盘，并可在应用设置中选择隐藏到托盘或退出程序。
 
 ## 使用流程
 
@@ -82,7 +83,10 @@ Resolution Hub 是一款 Windows 游戏分辨率启动器。它从统一界面�
 - Rust 2024
 - Tauri 2
 - windows-rs
-- 原生 HTML / CSS / JavaScript
+- React 19
+- Vite 8
+- TypeScript
+- Tailwind CSS 4
 
 ## 开发
 
@@ -91,6 +95,12 @@ Resolution Hub 是一款 Windows 游戏分辨率启动器。它从统一界面�
 ```powershell
 npm install
 npm run dev
+```
+
+仅启动浏览器中的前端开发服务器：
+
+```powershell
+npm run dev:web
 ```
 
 仅编译开发版：
@@ -104,11 +114,15 @@ cargo build
 ### 测试
 
 ```powershell
-node --check frontend\js\api.js
-node --check frontend\js\app.js
+npm run typecheck
+npm test
+npm run build:web
 cargo fmt --check
 cargo test
 ```
+
+前端源码位于 `frontend\src`，Vite 构建产物输出到 `dist`。所有 Tauri API
+调用和 `runtime-status` 事件订阅统一收口在 `frontend\src\lib\tauri.ts`。
 
 ### 构建
 
@@ -133,7 +147,7 @@ Release 可执行文件位于 `target\release\resolution-hub.exe`。
 | 文件 | 用途 |
 | --- | --- |
 | `profiles.json` | 游戏配置 |
-| `settings.json` | 每台显示器的默认桌面模式 |
+| `settings.json` | 默认桌面模式与窗口关闭行为 |
 | `recent-apps.json` | 本机最近活动应用历史 |
 | `pending-restore.json` | 异常退出时的临时恢复点 |
 
@@ -148,7 +162,7 @@ HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 
 - 目前以“由 Resolution Hub 启动游戏”为主要使用方式。
 - 启动器模式依赖游戏主进程名；首次添加时建议使用“启动并识别”。
-- 当前不包含系统托盘和后台静默启动。
+- 支持关闭主窗口后驻留系统托盘；当前不包含开机后的后台静默启动。
 - 仅面向 Windows，显示模式切换依赖 Windows Display API。
 
 ## 许可证
