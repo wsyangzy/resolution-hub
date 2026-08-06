@@ -13,6 +13,7 @@ vi.mock("./lib/tauri", () => ({
     getSettings: vi.fn(),
     setDefaultDisplayMode: vi.fn(),
     setCloseBehavior: vi.fn(),
+    setRestoreOnFocusLoss: vi.fn(),
     getAutoStartEnabled: vi.fn(),
     setAutoStartEnabled: vi.fn(),
     listProfiles: vi.fn(),
@@ -107,6 +108,7 @@ function resetApi() {
     minimizeBehavior: "taskbar",
     closeBehavior: "hideToTray",
     confirmCloseBehavior: true,
+    restoreOnFocusLoss: false,
   });
   vi.mocked(tauriApi.setCloseBehavior).mockImplementation(async (
     closeBehavior,
@@ -117,6 +119,16 @@ function resetApi() {
     minimizeBehavior,
     closeBehavior,
     confirmCloseBehavior,
+    restoreOnFocusLoss: false,
+  }));
+  vi.mocked(tauriApi.setRestoreOnFocusLoss).mockImplementation(async (
+    restoreOnFocusLoss,
+  ) => ({
+    defaultDisplayModes: [mode],
+    minimizeBehavior: "taskbar",
+    closeBehavior: "hideToTray",
+    confirmCloseBehavior: true,
+    restoreOnFocusLoss,
   }));
   vi.mocked(tauriApi.getAutoStartEnabled).mockResolvedValue(false);
   vi.mocked(tauriApi.setAutoStartEnabled).mockImplementation(async (enabled) => enabled);
@@ -150,32 +162,57 @@ function resetApi() {
 
 describe("App controller", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     resetApi();
   });
 
-  it("lets the user collapse and expand the sidebar", async () => {
+  it("restores and remembers the sidebar state", async () => {
     const user = userEvent.setup();
+    window.localStorage.setItem("resolution-hub-sidebar-collapsed", "true");
     const { container } = render(<App />);
     const shell = container.querySelector(".app-shell");
-    const collapseButton = screen.getByRole("button", { name: "收起侧边栏" });
 
-    expect(collapseButton.closest(".sidebar-foot")).not.toBeNull();
+    expect(shell).toHaveClass("is-sidebar-collapsed");
+    const expandButton = screen.getByRole("button", { name: "展开侧边栏" });
+    const settingsButton = screen.getByRole("button", { name: "应用设置" });
+    expect(expandButton.closest(".sidebar-foot")).not.toBeNull();
+    expect(expandButton).not.toHaveAttribute("data-tooltip");
+    expect(settingsButton).not.toHaveAttribute("data-tooltip");
+
+    await user.click(expandButton);
+    expect(shell).not.toHaveClass("is-sidebar-collapsed");
+    expect(window.localStorage.getItem("resolution-hub-sidebar-collapsed")).toBe("false");
+
+    const collapseButton = screen.getByRole("button", { name: "收起侧边栏" });
+    expect(collapseButton).not.toHaveAttribute("data-tooltip");
     await user.click(collapseButton);
     expect(shell).toHaveClass("is-sidebar-collapsed");
-
-    await user.click(screen.getByRole("button", { name: "展开侧边栏" }));
-    expect(shell).not.toHaveClass("is-sidebar-collapsed");
+    expect(window.localStorage.getItem("resolution-hub-sidebar-collapsed")).toBe("true");
   });
 
-  it("dismisses a sidebar tooltip after its navigation button is clicked", async () => {
+  it("uses the shared tooltip layer instead of native title hints", async () => {
     const user = userEvent.setup();
+    vi.mocked(tauriApi.listProfiles).mockResolvedValue([profile]);
     render(<App />);
-    const settingsButton = screen.getByRole("button", { name: "应用设置" });
-    const tooltip = settingsButton.closest(".t-tt-wrap");
+    const layoutButton = await screen.findByRole("button", { name: "切换为单行展示" });
 
-    expect(tooltip).toHaveAttribute("data-dismissed", "false");
-    await user.click(settingsButton);
-    expect(tooltip).toHaveAttribute("data-dismissed", "true");
+    expect(layoutButton).not.toHaveAttribute("title");
+    await user.hover(layoutButton);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("切换为单行展示");
+
+    await user.click(layoutButton);
+    await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
+
+    const statusMode = document.querySelector<HTMLElement>("[data-tooltip-overflow]")!;
+    await user.hover(statusMode);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    Object.defineProperties(statusMode, {
+      clientWidth: { value: 100 },
+      scrollWidth: { value: 200 },
+    });
+    await user.unhover(statusMode);
+    await user.hover(statusMode);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(statusMode.dataset.tooltipOverflow!);
   });
 
   it("collapses the sidebar when the window becomes narrow", () => {
@@ -199,6 +236,7 @@ describe("App controller", () => {
 
     expect(container.querySelector(".app-shell")).toHaveClass("is-sidebar-collapsed");
     expect(screen.getByRole("button", { name: "展开侧边栏" })).toBeVisible();
+    expect(window.localStorage.getItem("resolution-hub-sidebar-collapsed")).toBe("true");
     matchMediaSpy.mockRestore();
   });
 
@@ -260,6 +298,7 @@ describe("App controller", () => {
       minimizeBehavior: "taskbar",
       closeBehavior: "hideToTray",
       confirmCloseBehavior: false,
+      restoreOnFocusLoss: false,
     });
     render(<App />);
     await screen.findByRole("button", { name: "添加第一个游戏" });
@@ -276,6 +315,7 @@ describe("App controller", () => {
       minimizeBehavior: "taskbar",
       closeBehavior: "hideToTray",
       confirmCloseBehavior: false,
+      restoreOnFocusLoss: false,
     });
     render(<App />);
     await screen.findByRole("button", { name: "添加第一个游戏" });
@@ -284,6 +324,27 @@ describe("App controller", () => {
 
     await waitFor(() => expect(tauriApi.close).toHaveBeenCalledTimes(1));
     expect(tauriApi.hide).not.toHaveBeenCalled();
+  });
+
+  it("stops an active switching session before exiting", async () => {
+    vi.mocked(tauriApi.getRuntimeStatus).mockResolvedValue({
+      ...idle,
+      phase: "switching",
+      profileId: profile.id,
+      profileName: profile.name,
+      message: "正在切换显示模式",
+      canRestore: false,
+    });
+    render(<App />);
+    await screen.findByRole("button", { name: "添加第一个游戏" });
+
+    act(() => trayExitHandler?.());
+
+    await waitFor(() => expect(tauriApi.close).toHaveBeenCalledTimes(1));
+    expect(tauriApi.restoreDisplay).toHaveBeenCalledTimes(1);
+    const restoreOrder = vi.mocked(tauriApi.restoreDisplay).mock.invocationCallOrder[0]!;
+    const closeOrder = vi.mocked(tauriApi.close).mock.invocationCallOrder[0]!;
+    expect(restoreOrder).toBeLessThan(closeOrder);
   });
 
   it("restores a startup recovery point through the modal", async () => {
@@ -308,6 +369,7 @@ describe("App controller", () => {
       minimizeBehavior: "taskbar",
       closeBehavior: "exit",
       confirmCloseBehavior: false,
+      restoreOnFocusLoss: false,
     });
     vi.mocked(tauriApi.getPendingRestore).mockResolvedValue({
       profileName: "Test Game",
@@ -345,6 +407,18 @@ describe("App controller", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("注册表写入失败");
   });
 
+  it("persists the focus-loss resolution setting", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "应用设置" }));
+    const toggle = await screen.findByRole("switch", { name: "切回桌面时恢复分辨率" });
+    await user.click(toggle);
+
+    await waitFor(() => expect(tauriApi.setRestoreOnFocusLoss).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(toggle).toBeChecked());
+  });
+
   it("does not show a routine success toast", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -380,17 +454,20 @@ describe("App controller", () => {
 
   it("switches the game library between card and single-row layouts", async () => {
     const user = userEvent.setup();
+    window.localStorage.setItem("resolution-hub-library-layout", "list");
     vi.mocked(tauriApi.listProfiles).mockResolvedValue([profile]);
     const { container } = render(<App />);
 
-    const layout = await screen.findByRole("button", { name: "切换为单行展示" });
-    expect(container.querySelector(".profile-grid")).toHaveAttribute("data-layout", "cards");
-
-    await user.click(layout);
+    const layout = await screen.findByRole("button", { name: "切换为卡片展示" });
     expect(container.querySelector(".profile-grid")).toHaveAttribute("data-layout", "list");
 
-    await user.click(screen.getByRole("button", { name: "切换为卡片展示" }));
+    await user.click(layout);
     expect(container.querySelector(".profile-grid")).toHaveAttribute("data-layout", "cards");
+    expect(window.localStorage.getItem("resolution-hub-library-layout")).toBe("cards");
+
+    await user.click(screen.getByRole("button", { name: "切换为单行展示" }));
+    expect(container.querySelector(".profile-grid")).toHaveAttribute("data-layout", "list");
+    expect(window.localStorage.getItem("resolution-hub-library-layout")).toBe("list");
   });
 
   it("keeps the active action consistent with the launch action in the single-row layout", async () => {

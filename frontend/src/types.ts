@@ -36,6 +36,7 @@ export interface AppSettings {
   minimizeBehavior: MinimizeBehavior;
   closeBehavior: CloseBehavior;
   confirmCloseBehavior: boolean;
+  restoreOnFocusLoss: boolean;
 }
 
 export interface ApplicationIconRequest {

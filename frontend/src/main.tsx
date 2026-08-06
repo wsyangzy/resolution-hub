@@ -4,6 +4,8 @@ import App from "./App";
 import { tauriApi } from "./lib/tauri";
 import "./styles/index.css";
 
+document.documentElement.classList.toggle("is-production-build", import.meta.env.PROD);
+
 const root = document.getElementById("root");
 
 if (!root) {

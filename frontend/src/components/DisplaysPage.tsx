@@ -385,7 +385,10 @@ export function DisplaysPage({
                       <span className="display-option-index">
                         屏幕 {String(index + 1).padStart(2, "0")}
                       </span>
-                      <strong title={display.friendlyName || display.deviceName}>
+                      <strong
+                        data-tooltip-overflow={display.friendlyName || display.deviceName}
+                        data-tooltip-side="right"
+                      >
                         {display.friendlyName || display.deviceName}
                       </strong>
                       <small>{formatMode(display.currentMode)}</small>
@@ -405,7 +408,7 @@ export function DisplaysPage({
                 <div>
                   <span className="section-kicker">所选显示器</span>
                   <h2>{selectedDisplay.friendlyName || selectedDisplay.deviceName}</h2>
-                  <p title={selectedDisplay.deviceName}>
+                  <p data-tooltip-overflow={selectedDisplay.deviceName} data-tooltip-side="bottom">
                     {selectedDisplay.deviceName}
                   </p>
                 </div>

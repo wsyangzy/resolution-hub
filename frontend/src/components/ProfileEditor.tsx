@@ -775,7 +775,7 @@ export function ProfileEditor({
                         />
                         <span className="source-item-copy">
                           <strong>{game.name}</strong>
-                          <span title={game.installDir}>{game.installDir}</span>
+                          <span data-tooltip-overflow={game.installDir}>{game.installDir}</span>
                         </span>
                         <span className="source-item-meta">{game.appId}</span>
                         {selected && <Check size={16} aria-hidden="true" />}
@@ -860,7 +860,7 @@ export function ProfileEditor({
                         />
                         <span className="source-item-copy">
                           <strong>{application.name}</strong>
-                          <span title={application.executable}>{application.executable}</span>
+                          <span data-tooltip-overflow={application.executable}>{application.executable}</span>
                         </span>
                         <span className="source-item-meta">{application.processName}</span>
                         {selected && <Check size={16} aria-hidden="true" />}
@@ -890,7 +890,7 @@ export function ProfileEditor({
               />
               <span className="selected-source-copy">
                 <strong>{draft.selectedSource.name}</strong>
-                <span title={draft.selectedSource.detail}>{draft.selectedSource.detail}</span>
+                <span data-tooltip-overflow={draft.selectedSource.detail}>{draft.selectedSource.detail}</span>
               </span>
               <span className="source-tag">{draft.selectedSource.type}</span>
             </div>
@@ -942,7 +942,6 @@ export function ProfileEditor({
                   key={`${application.pid}:${application.processName}`}
                   type="button"
                   className="candidate-button"
-                  title={application.executable}
                   onClick={() => selectCandidate(application)}
                 >
                   {application.processName}

@@ -91,6 +91,8 @@ export const tauriApi = {
     confirmCloseBehavior,
     minimizeBehavior,
   }),
+  setRestoreOnFocusLoss: (enabled: boolean) =>
+    invoke<AppSettings>("set_restore_on_focus_loss", { enabled }),
   getAutoStartEnabled: () => invoke<boolean>("get_auto_start_enabled"),
   setAutoStartEnabled: (enabled: boolean) =>
     invoke<boolean>("set_auto_start_enabled", { enabled }),

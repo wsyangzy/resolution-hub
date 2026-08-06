@@ -31,7 +31,7 @@ import {
   ConfirmDialog,
   RuntimeText,
   Toast,
-  Tooltip,
+  TooltipLayer,
 } from "./components/ui";
 import { tauriApi } from "./lib/tauri";
 import type {
@@ -48,6 +48,27 @@ type Workspace = "library" | "displays" | "settings";
 type ToastTone = "error" | "success" | "info";
 
 const COMPACT_SIDEBAR_QUERY = "(max-width: 820px)";
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "resolution-hub-sidebar-collapsed";
+
+function initialSidebarCollapsed(): boolean {
+  try {
+    const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY);
+    if (stored === "true" || stored === "false") {
+      return stored === "true";
+    }
+  } catch {
+    // Unavailable storage falls back to the responsive default.
+  }
+  return window.matchMedia(COMPACT_SIDEBAR_QUERY).matches;
+}
+
+function storeSidebarCollapsed(collapsed: boolean) {
+  try {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
+  } catch {
+    // UI preferences must not block sidebar interaction.
+  }
+}
 
 interface AppState {
   profiles: GameProfile[];
@@ -87,6 +108,7 @@ const INITIAL_STATE: AppState = {
     minimizeBehavior: "taskbar",
     closeBehavior: "hideToTray",
     confirmCloseBehavior: true,
+    restoreOnFocusLoss: false,
   },
   runtime: IDLE_RUNTIME,
   pendingRestore: null,
@@ -146,27 +168,23 @@ interface SidebarItemProps {
 
 function SidebarItem({ label, active, icon, onClick }: SidebarItemProps) {
   return (
-    <Tooltip label={label} side="right">
-      <button
-        type="button"
-        className={`sidebar-item${active ? " is-active" : ""}`}
-        aria-label={label}
-        aria-current={active ? "page" : undefined}
-        onClick={onClick}
-      >
-        <span className="sidebar-item-icon" aria-hidden="true">{icon}</span>
-        <span className="sidebar-item-label">{label}</span>
-      </button>
-    </Tooltip>
+    <button
+      type="button"
+      className={`sidebar-item${active ? " is-active" : ""}`}
+      aria-label={label}
+      aria-current={active ? "page" : undefined}
+      onClick={onClick}
+    >
+      <span className="sidebar-item-icon" aria-hidden="true">{icon}</span>
+      <span className="sidebar-item-label">{label}</span>
+    </button>
   );
 }
 
 export default function App() {
   const [state, dispatch] = useReducer(appReducer, INITIAL_STATE);
   const [workspace, setWorkspace] = useState<Workspace>("library");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => window.matchMedia(COMPACT_SIDEBAR_QUERY).matches,
-  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<GameProfile | null>(null);
   const [editorDirty, setEditorDirty] = useState(false);
@@ -177,10 +195,21 @@ export default function App() {
 
   useEffect(() => {
     const compactSidebar = window.matchMedia(COMPACT_SIDEBAR_QUERY);
-    const updateSidebar = (event: MediaQueryListEvent) => setSidebarCollapsed(event.matches);
+    const updateSidebar = (event: MediaQueryListEvent) => {
+      setSidebarCollapsed(event.matches);
+      storeSidebarCollapsed(event.matches);
+    };
     compactSidebar.addEventListener("change", updateSidebar);
     return () => compactSidebar.removeEventListener("change", updateSidebar);
   }, []);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((collapsed) => {
+      const next = !collapsed;
+      storeSidebarCollapsed(next);
+      return next;
+    });
+  };
 
   const openConfirm = useCallback((options: ConfirmOptions) => {
     const activeElement = document.activeElement;
@@ -298,6 +327,7 @@ export default function App() {
 
   const runtimeBusy = state.runtime.phase !== "idle" && state.runtime.phase !== "error";
   const canRestore = state.runtime.canRestore || state.pendingRestore !== null;
+  const shouldRestoreBeforeExit = runtimeBusy || canRestore;
   const statusMode = useMemo(() => defaultModeLabel(state), [state.displays, state.settings]);
 
   const leaveEditor = useCallback((afterLeave: () => void) => {
@@ -387,14 +417,14 @@ export default function App() {
   }, [showError]);
 
   const exitNow = useCallback(async () => {
-    if (canRestore) {
+    if (shouldRestoreBeforeExit) {
       await restoreDesktop();
     }
     await tauriApi.close();
     if (editorDirty) {
       setEditorDirty(false);
     }
-  }, [canRestore, editorDirty, restoreDesktop]);
+  }, [editorDirty, restoreDesktop, shouldRestoreBeforeExit]);
 
   const requestExit = useCallback(() => {
     if (!canRestore && !editorDirty) {
@@ -432,6 +462,11 @@ export default function App() {
     dispatch({ type: "settings", value: settings });
   }, []);
 
+  const saveRestoreOnFocusLoss = useCallback(async (enabled: boolean) => {
+    const settings = await tauriApi.setRestoreOnFocusLoss(enabled);
+    dispatch({ type: "settings", value: settings });
+  }, []);
+
   const hideToTray = useCallback(async () => {
     await tauriApi.hide();
   }, []);
@@ -456,6 +491,8 @@ export default function App() {
     }
     if (canRestore) {
       description += " 退出前会先恢复桌面显示模式；恢复失败时不会退出。";
+    } else if (runtimeBusy) {
+      description += " 退出前会先停止当前游戏会话。";
     }
 
     openConfirm({
@@ -494,7 +531,7 @@ export default function App() {
         }
       },
     });
-  }, [canRestore, editorDirty, exitNow, hideToTray, openConfirm, requestExit, saveWindowPreferences, showError, showToast, state.loading, state.settings.closeBehavior, state.settings.confirmCloseBehavior, state.settings.minimizeBehavior]);
+  }, [canRestore, editorDirty, exitNow, hideToTray, openConfirm, requestExit, runtimeBusy, saveWindowPreferences, showError, showToast, state.loading, state.settings.closeBehavior, state.settings.confirmCloseBehavior, state.settings.minimizeBehavior]);
 
   const closeWindowRef = useRef(closeWindow);
   const requestExitRef = useRef(requestExit);
@@ -577,8 +614,7 @@ export default function App() {
             type="button"
             className="sidebar-toggle"
             aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
-            title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
-            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+            onClick={toggleSidebar}
           >
             {sidebarCollapsed ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />}
           </button>
@@ -591,13 +627,13 @@ export default function App() {
           <strong data-tauri-drag-region>{pageTitle}</strong>
         </div>
         <div className="window-actions">
-          <button type="button" className="window-button" onClick={() => void tauriApi.minimize().catch(showError)} aria-label="最小化" title="最小化">
+          <button type="button" className="window-button" onClick={() => void tauriApi.minimize().catch(showError)} aria-label="最小化">
             <Minus size={16} />
           </button>
-          <button type="button" className="window-button" onClick={() => void tauriApi.toggleMaximize().catch(showError)} aria-label="最大化或还原" title="最大化或还原">
+          <button type="button" className="window-button" onClick={() => void tauriApi.toggleMaximize().catch(showError)} aria-label="最大化或还原">
             <Square size={13} />
           </button>
-          <button type="button" className="window-button window-close" onClick={() => void closeWindow()} aria-label="关闭" title="关闭">
+          <button type="button" className="window-button window-close" onClick={() => void closeWindow()} aria-label="关闭">
             <X size={16} />
           </button>
         </div>
@@ -651,9 +687,13 @@ export default function App() {
               minimizeBehavior={state.settings.minimizeBehavior}
               closeBehavior={state.settings.closeBehavior}
               confirmCloseBehavior={state.settings.confirmCloseBehavior}
+              restoreOnFocusLoss={state.settings.restoreOnFocusLoss}
+              loading={state.loading}
+              runtimeBusy={runtimeBusy}
               version={state.version}
               onAutoStartChange={updateAutoStart}
               onWindowPreferencesChange={saveWindowPreferences}
+              onRestoreOnFocusLossChange={saveRestoreOnFocusLoss}
               onToast={showToast}
             />
           </div>
@@ -661,10 +701,10 @@ export default function App() {
       </main>
 
       <footer className="safety-bar">
-        <div className="safety-default" title={`桌面默认模式：${statusMode}`}>
+        <div className="safety-default">
           <MonitorCog size={16} aria-hidden="true" />
           <span className="safety-label">桌面默认</span>
-          <strong>{statusMode}</strong>
+          <strong data-tooltip-overflow={`桌面默认模式：${statusMode}`}>{statusMode}</strong>
         </div>
         <div className="safety-actions">
           {state.runtime.canCancel && (
@@ -685,6 +725,7 @@ export default function App() {
         </div>
       </footer>
 
+      <TooltipLayer />
       <ConfirmDialog options={confirm} onClose={() => setConfirmState(null)} onError={showError} />
       <Toast
         message={toast?.message ?? null}

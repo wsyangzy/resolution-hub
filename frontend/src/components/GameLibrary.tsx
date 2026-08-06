@@ -22,6 +22,23 @@ import { AppIcon } from "./AppIcon";
 import { RuntimeText } from "./ui";
 
 type LibraryLayout = "cards" | "list";
+const LIBRARY_LAYOUT_STORAGE_KEY = "resolution-hub-library-layout";
+
+function initialLibraryLayout(): LibraryLayout {
+  try {
+    return window.localStorage.getItem(LIBRARY_LAYOUT_STORAGE_KEY) === "list" ? "list" : "cards";
+  } catch {
+    return "cards";
+  }
+}
+
+function storeLibraryLayout(layout: LibraryLayout) {
+  try {
+    window.localStorage.setItem(LIBRARY_LAYOUT_STORAGE_KEY, layout);
+  } catch {
+    // UI preferences must not block layout switching.
+  }
+}
 
 export interface GameLibraryProps {
   profiles: GameProfile[];
@@ -162,7 +179,7 @@ function ProfileCard({
         />
         <div className="profile-identity">
           <div className="profile-title-row">
-            <h2 className="profile-name" title={profile.name}>
+            <h2 className="profile-name" data-tooltip-overflow={profile.name}>
               {profile.name}
             </h2>
             {active && (
@@ -172,9 +189,9 @@ function ProfileCard({
               </span>
             )}
           </div>
-          <p className="profile-process" title={profile.processName}>
+          <p className="profile-process">
             <Cpu size={14} aria-hidden="true" />
-            <span>{profile.processName || "未配置主进程"}</span>
+            <span data-tooltip-overflow={profile.processName}>{profile.processName || "未配置主进程"}</span>
           </p>
         </div>
       </header>
@@ -191,21 +208,21 @@ function ProfileCard({
           <dt>启动来源</dt>
           <dd>
             <strong>{launchSourceLabel(profile)}</strong>
-            <span className="profile-detail-secondary" title={launchSourceDetail(profile)}>
+            <span className="profile-detail-secondary" data-tooltip-overflow={launchSourceDetail(profile)}>
               {launchSourceDetail(profile)}
             </span>
           </dd>
         </div>
         <div className="profile-detail-row profile-display-row">
           <dt>目标显示器</dt>
-          <dd title={profile.displayDevice}>
+          <dd>
             <Monitor size={14} aria-hidden="true" />
-            <span>{profile.displayDevice}</span>
+            <span data-tooltip-overflow={profile.displayDevice}>{profile.displayDevice}</span>
           </dd>
         </div>
         <div className="profile-detail-row profile-mode-row">
           <dt>游戏显示模式</dt>
-          <dd title={formatProfileMode(profile)}>{formatProfileMode(profile)}</dd>
+          <dd>{formatProfileMode(profile)}</dd>
         </div>
       </dl>
 
@@ -215,7 +232,6 @@ function ProfileCard({
           className={`button button-primary profile-launch-button${active ? " is-running" : ""}`}
           disabled={busy}
           aria-label={active ? `${profile.name}：${phaseLabel}` : `启动 ${profile.name}`}
-          title={active ? phaseLabel : `启动 ${profile.name}`}
           onClick={() => onLaunch(profile)}
         >
           {active ? <Activity size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
@@ -276,8 +292,16 @@ export function GameLibrary({
   onLaunch,
 }: GameLibraryProps) {
   const busy = runtime.phase !== "idle" && runtime.phase !== "error";
-  const [layout, setLayout] = useState<LibraryLayout>("cards");
+  const [layout, setLayout] = useState<LibraryLayout>(initialLibraryLayout);
   const layoutToggleLabel = layout === "cards" ? "切换为单行展示" : "切换为卡片展示";
+
+  const toggleLayout = () => {
+    setLayout((current) => {
+      const next = current === "cards" ? "list" : "cards";
+      storeLibraryLayout(next);
+      return next;
+    });
+  };
 
   return (
     <section className="page game-library-page" aria-labelledby="game-library-title">
@@ -292,8 +316,9 @@ export function GameLibrary({
               type="button"
               className="icon-button library-layout-toggle"
               aria-label={layoutToggleLabel}
-              title={layoutToggleLabel}
-              onClick={() => setLayout((current) => current === "cards" ? "list" : "cards")}
+              data-tooltip={layoutToggleLabel}
+              data-tooltip-side="bottom"
+              onClick={toggleLayout}
             >
               {layout === "cards"
                 ? <List size={18} aria-hidden="true" />

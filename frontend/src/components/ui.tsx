@@ -3,6 +3,7 @@ import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { Check, ChevronDown, X } from "lucide-react";
+import { createPortal } from "react-dom";
 import {
     type ReactNode,
     useEffect,
@@ -259,22 +260,204 @@ export function Toast({ message, tone = "error", onClose }: ToastProps) {
 interface TooltipProps {
     label: string;
     children: ReactNode;
-    side?: "top" | "right";
+    side?: TooltipSide;
+}
+
+type TooltipSide = "top" | "right" | "bottom" | "left";
+
+interface ActiveTooltip {
+    target: HTMLElement;
+    label: string;
+    side: TooltipSide;
+}
+
+interface TooltipPosition {
+    left: number;
+    top: number;
+    side: TooltipSide;
+}
+
+const TOOLTIP_GAP = 8;
+const TOOLTIP_VIEWPORT_MARGIN = 10;
+
+function tooltipSide(value: string | undefined): TooltipSide {
+    return value === "right" || value === "bottom" || value === "left" ? value : "top";
+}
+
+function tooltipPosition(
+    target: DOMRect,
+    tooltip: DOMRect,
+    preferredSide: TooltipSide,
+): TooltipPosition {
+    const fits: Record<TooltipSide, boolean> = {
+        top: target.top - TOOLTIP_GAP - tooltip.height >= TOOLTIP_VIEWPORT_MARGIN,
+        right: target.right + TOOLTIP_GAP + tooltip.width <= window.innerWidth - TOOLTIP_VIEWPORT_MARGIN,
+        bottom: target.bottom + TOOLTIP_GAP + tooltip.height <= window.innerHeight - TOOLTIP_VIEWPORT_MARGIN,
+        left: target.left - TOOLTIP_GAP - tooltip.width >= TOOLTIP_VIEWPORT_MARGIN,
+    };
+    const opposite: Record<TooltipSide, TooltipSide> = {
+        top: "bottom",
+        right: "left",
+        bottom: "top",
+        left: "right",
+    };
+    const side = !fits[preferredSide] && fits[opposite[preferredSide]]
+        ? opposite[preferredSide]
+        : preferredSide;
+
+    let left = target.left + (target.width - tooltip.width) / 2;
+    let top = target.top - TOOLTIP_GAP - tooltip.height;
+    if (side === "right") {
+        left = target.right + TOOLTIP_GAP;
+        top = target.top + (target.height - tooltip.height) / 2;
+    } else if (side === "bottom") {
+        top = target.bottom + TOOLTIP_GAP;
+    } else if (side === "left") {
+        left = target.left - TOOLTIP_GAP - tooltip.width;
+        top = target.top + (target.height - tooltip.height) / 2;
+    }
+
+    return {
+        left: Math.min(
+            Math.max(left, TOOLTIP_VIEWPORT_MARGIN),
+            Math.max(TOOLTIP_VIEWPORT_MARGIN, window.innerWidth - tooltip.width - TOOLTIP_VIEWPORT_MARGIN),
+        ),
+        top: Math.min(
+            Math.max(top, TOOLTIP_VIEWPORT_MARGIN),
+            Math.max(TOOLTIP_VIEWPORT_MARGIN, window.innerHeight - tooltip.height - TOOLTIP_VIEWPORT_MARGIN),
+        ),
+        side,
+    };
 }
 
 export function Tooltip({ label, children, side = "top" }: TooltipProps) {
-    const id = `tooltip-${label.replace(/\s+/g, "-")}`;
-    const [dismissed, setDismissed] = useState(false);
     return (
         <span
             className={`t-tt-wrap tooltip-${side}`}
-            data-dismissed={dismissed}
-            onClick={() => setDismissed(true)}
-            onPointerLeave={() => setDismissed(false)}
+            data-tooltip={label}
+            data-tooltip-side={side}
         >
-            <span className="t-tt-trigger" aria-describedby={id}>{children}</span>
-            <span className="t-tt" id={id} role="tooltip">{label}</span>
+            <span className="t-tt-trigger">{children}</span>
         </span>
+    );
+}
+
+export function TooltipLayer() {
+    const [active, setActive] = useState<ActiveTooltip | null>(null);
+    const [position, setPosition] = useState<TooltipPosition | null>(null);
+    const [visible, setVisible] = useState(false);
+    const tooltipRef = useRef<HTMLSpanElement>(null);
+    const pointerTarget = useRef<HTMLElement | null>(null);
+    const focusTarget = useRef<HTMLElement | null>(null);
+    const dismissedTarget = useRef<HTMLElement | null>(null);
+
+    useEffect(() => {
+        const findTarget = (event: Event) => event.target instanceof Element
+            ? event.target.closest<HTMLElement>("[data-tooltip], [data-tooltip-overflow]")
+            : null;
+        const show = (target: HTMLElement | null) => {
+            const overflowOnly = target?.dataset.tooltipOverflow !== undefined;
+            const label = (target?.dataset.tooltip ?? target?.dataset.tooltipOverflow)?.trim();
+            const clipped = target
+                ? target.scrollWidth > target.clientWidth || target.scrollHeight > target.clientHeight
+                : false;
+            if (!target || !label || (overflowOnly && !clipped) || dismissedTarget.current === target) {
+                setVisible(false);
+                return;
+            }
+            setPosition(null);
+            setActive({ target, label, side: tooltipSide(target.dataset.tooltipSide) });
+            setVisible(true);
+        };
+        const showCurrent = () => show(pointerTarget.current ?? focusTarget.current);
+
+        const onPointerOver = (event: PointerEvent) => {
+            const target = findTarget(event);
+            if (!target || pointerTarget.current === target) {
+                return;
+            }
+            pointerTarget.current = target;
+            if (dismissedTarget.current !== target) {
+                dismissedTarget.current = null;
+            }
+            showCurrent();
+        };
+        const onPointerOut = (event: PointerEvent) => {
+            const target = pointerTarget.current;
+            if (!target || (event.relatedTarget instanceof Node && target.contains(event.relatedTarget))) {
+                return;
+            }
+            pointerTarget.current = null;
+            if (dismissedTarget.current === target && focusTarget.current !== target) {
+                dismissedTarget.current = null;
+            }
+            showCurrent();
+        };
+        const onFocusIn = (event: FocusEvent) => {
+            focusTarget.current = findTarget(event);
+            showCurrent();
+        };
+        const onFocusOut = (event: FocusEvent) => {
+            const target = focusTarget.current;
+            if (!target || (event.relatedTarget instanceof Node && target.contains(event.relatedTarget))) {
+                return;
+            }
+            focusTarget.current = null;
+            if (dismissedTarget.current === target && pointerTarget.current !== target) {
+                dismissedTarget.current = null;
+            }
+            showCurrent();
+        };
+        const dismiss = () => {
+            dismissedTarget.current = pointerTarget.current ?? focusTarget.current;
+            setVisible(false);
+        };
+        const hide = () => setVisible(false);
+
+        document.addEventListener("pointerover", onPointerOver);
+        document.addEventListener("pointerout", onPointerOut);
+        document.addEventListener("focusin", onFocusIn);
+        document.addEventListener("focusout", onFocusOut);
+        document.addEventListener("click", dismiss);
+        window.addEventListener("resize", hide);
+        window.addEventListener("scroll", hide, true);
+        return () => {
+            document.removeEventListener("pointerover", onPointerOver);
+            document.removeEventListener("pointerout", onPointerOut);
+            document.removeEventListener("focusin", onFocusIn);
+            document.removeEventListener("focusout", onFocusOut);
+            document.removeEventListener("click", dismiss);
+            window.removeEventListener("resize", hide);
+            window.removeEventListener("scroll", hide, true);
+        };
+    }, []);
+
+    useLayoutEffect(() => {
+        if (!active || !tooltipRef.current || !active.target.isConnected) {
+            setPosition(null);
+            return;
+        }
+        setPosition(tooltipPosition(
+            active.target.getBoundingClientRect(),
+            tooltipRef.current.getBoundingClientRect(),
+            active.side,
+        ));
+    }, [active]);
+
+    return createPortal(
+        <span
+            ref={tooltipRef}
+            id="app-tooltip"
+            className="t-tooltip-layer"
+            role="tooltip"
+            aria-hidden={!visible || !position}
+            data-side={position?.side ?? active?.side ?? "top"}
+            data-visible={Boolean(visible && position)}
+            style={position ? { left: position.left, top: position.top } : undefined}
+        >
+            {active?.label ?? ""}
+        </span>,
+        document.body,
     );
 }
 
