@@ -108,7 +108,6 @@ const INITIAL_STATE: AppState = {
     minimizeBehavior: "taskbar",
     closeBehavior: "hideToTray",
     confirmCloseBehavior: true,
-    restoreOnFocusLoss: false,
   },
   runtime: IDLE_RUNTIME,
   pendingRestore: null,
@@ -244,6 +243,7 @@ export default function App() {
   }, []);
 
   const restoreDesktop = useCallback(async () => {
+    tauriApi.setWindowSizePersistenceSuspended(true);
     await tauriApi.restoreDisplay();
     dispatch({ type: "pendingRestore", value: null });
     void refreshDisplays().catch(showError);
@@ -252,7 +252,7 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
     let unlisten: (() => void) | undefined;
-
+    let windowSizeNormalizationId = 0;
     void tauriApi.listenRuntime((runtime) => {
       if (!mounted) {
         return;
@@ -263,6 +263,21 @@ export default function App() {
       dispatch({ type: "runtime", value: runtime });
       if (runtime.phase === "error") {
         showError(runtime.message);
+      }
+      if (previousPhase !== runtime.phase) {
+        const normalizationId = ++windowSizeNormalizationId;
+        tauriApi.setWindowSizePersistenceSuspended(true);
+        if (runtime.phase === "idle" || runtime.phase === "error") {
+          void tauriApi.ensureWindowSize().catch(() => undefined).finally(() => {
+            if (
+              mounted
+              && normalizationId === windowSizeNormalizationId
+              && !runtime.canRestore
+            ) {
+              tauriApi.setWindowSizePersistenceSuspended(false);
+            }
+          });
+        }
       }
       if (previousPhase !== "idle" && runtime.phase === "idle") {
         void refreshDisplays().catch(showError);
@@ -290,6 +305,17 @@ export default function App() {
       }
 
       const [profiles, displays, settings, runtime, pending, autoStart, version] = results;
+      if (!runtimeEventSeenRef.current) {
+        const runtimeOwnsDisplay = runtime.status === "fulfilled"
+          && (
+            (runtime.value.phase !== "idle" && runtime.value.phase !== "error")
+            || runtime.value.canRestore
+          );
+        const pendingRestoreExists = pending.status === "fulfilled" && pending.value !== null;
+        tauriApi.setWindowSizePersistenceSuspended(
+          runtimeOwnsDisplay || pendingRestoreExists,
+        );
+      }
       if (profiles.status === "fulfilled") dispatch({ type: "profiles", value: profiles.value });
       if (displays.status === "fulfilled") dispatch({ type: "displays", value: displays.value });
       if (settings.status === "fulfilled") dispatch({ type: "settings", value: settings.value });
@@ -321,6 +347,7 @@ export default function App() {
 
     return () => {
       mounted = false;
+      windowSizeNormalizationId += 1;
       unlisten?.();
     };
   }, [openConfirm, refreshDisplays, restoreDesktop, showError]);
@@ -391,9 +418,11 @@ export default function App() {
   }, [openConfirm, refreshProfiles, showToast]);
 
   const launchProfile = useCallback(async (profile: GameProfile) => {
+    tauriApi.setWindowSizePersistenceSuspended(true);
     try {
       await tauriApi.launchProfile(profile.id);
     } catch (error) {
+      tauriApi.setWindowSizePersistenceSuspended(false);
       showError(error);
     }
   }, [showError]);
@@ -459,11 +488,6 @@ export default function App() {
       confirmCloseBehavior,
       minimizeBehavior,
     );
-    dispatch({ type: "settings", value: settings });
-  }, []);
-
-  const saveRestoreOnFocusLoss = useCallback(async (enabled: boolean) => {
-    const settings = await tauriApi.setRestoreOnFocusLoss(enabled);
     dispatch({ type: "settings", value: settings });
   }, []);
 
@@ -687,13 +711,9 @@ export default function App() {
               minimizeBehavior={state.settings.minimizeBehavior}
               closeBehavior={state.settings.closeBehavior}
               confirmCloseBehavior={state.settings.confirmCloseBehavior}
-              restoreOnFocusLoss={state.settings.restoreOnFocusLoss}
-              loading={state.loading}
-              runtimeBusy={runtimeBusy}
               version={state.version}
               onAutoStartChange={updateAutoStart}
               onWindowPreferencesChange={saveWindowPreferences}
-              onRestoreOnFocusLossChange={saveRestoreOnFocusLoss}
               onToast={showToast}
             />
           </div>

@@ -79,11 +79,6 @@ fn set_close_behavior(
 }
 
 #[tauri::command]
-fn set_restore_on_focus_loss(enabled: bool) -> Result<AppSettings, String> {
-    profile::save_restore_on_focus_loss(enabled)
-}
-
-#[tauri::command]
 fn get_auto_start_enabled() -> Result<bool, String> {
     autostart::is_enabled()
 }
@@ -287,7 +282,6 @@ pub fn run() {
             get_settings,
             set_default_display_mode,
             set_close_behavior,
-            set_restore_on_focus_loss,
             get_auto_start_enabled,
             set_auto_start_enabled,
             list_profiles,

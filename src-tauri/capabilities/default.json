@@ -7,6 +7,7 @@
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-set-size",
+    "core:window:allow-set-size-constraints",
     "core:window:allow-center",
     "core:window:allow-close",
     "core:window:allow-start-dragging"

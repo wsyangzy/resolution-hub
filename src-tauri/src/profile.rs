@@ -196,13 +196,6 @@ pub fn save_close_behavior(
     Ok(settings)
 }
 
-pub fn save_restore_on_focus_loss(enabled: bool) -> Result<AppSettings, String> {
-    let mut settings = load_settings()?;
-    settings.restore_on_focus_loss = enabled;
-    save_settings(&settings)?;
-    Ok(settings)
-}
-
 pub fn default_display_mode(device_name: &str) -> Result<Option<DisplayMode>, String> {
     Ok(load_settings()?
         .default_display_modes

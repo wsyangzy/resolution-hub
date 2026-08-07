@@ -18,13 +18,9 @@ describe("SettingsPage", () => {
         minimizeBehavior="taskbar"
         closeBehavior="hideToTray"
         confirmCloseBehavior={false}
-        restoreOnFocusLoss={false}
-        loading={false}
-        runtimeBusy={false}
         version="0.1.1"
         onAutoStartChange={vi.fn()}
         onWindowPreferencesChange={vi.fn()}
-        onRestoreOnFocusLossChange={vi.fn()}
         onToast={vi.fn()}
       />,
     );
@@ -46,13 +42,9 @@ describe("SettingsPage", () => {
         minimizeBehavior="taskbar"
         closeBehavior="hideToTray"
         confirmCloseBehavior={false}
-        restoreOnFocusLoss={false}
-        loading={false}
-        runtimeBusy={false}
         version="0.1.1"
         onAutoStartChange={onAutoStartChange}
         onWindowPreferencesChange={vi.fn()}
-        onRestoreOnFocusLossChange={vi.fn()}
         onToast={onToast}
       />,
     );
@@ -73,13 +65,9 @@ describe("SettingsPage", () => {
         minimizeBehavior="taskbar"
         closeBehavior="hideToTray"
         confirmCloseBehavior={true}
-        restoreOnFocusLoss={false}
-        loading={false}
-        runtimeBusy={false}
         version="0.1.1"
         onAutoStartChange={vi.fn()}
         onWindowPreferencesChange={onWindowPreferencesChange}
-        onRestoreOnFocusLossChange={vi.fn()}
         onToast={vi.fn()}
       />,
     );
@@ -103,13 +91,9 @@ describe("SettingsPage", () => {
         minimizeBehavior="taskbar"
         closeBehavior="hideToTray"
         confirmCloseBehavior={true}
-        restoreOnFocusLoss={false}
-        loading={false}
-        runtimeBusy={false}
         version="0.1.1"
         onAutoStartChange={vi.fn()}
         onWindowPreferencesChange={onWindowPreferencesChange}
-        onRestoreOnFocusLossChange={vi.fn()}
         onToast={onToast}
       />,
     );
@@ -122,42 +106,5 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(onToast).toHaveBeenCalledWith("设置文件写入失败", "error"));
     expect(hideRadio).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "关闭按钮时询问我" })).toBeChecked();
-  });
-
-  it("saves the focus-loss preference and disables it during a game session", async () => {
-    const user = userEvent.setup();
-    const onRestoreOnFocusLossChange = vi.fn();
-    const props = {
-      autoStartEnabled: false,
-      minimizeBehavior: "taskbar" as const,
-      closeBehavior: "hideToTray" as const,
-      confirmCloseBehavior: true,
-      restoreOnFocusLoss: false,
-      loading: false,
-      runtimeBusy: false,
-      version: "0.1.1",
-      onAutoStartChange: vi.fn(),
-      onWindowPreferencesChange: vi.fn(),
-      onRestoreOnFocusLossChange,
-      onToast: vi.fn(),
-    };
-    const { rerender } = render(<SettingsPage {...props} />);
-
-    const toggle = screen.getByRole("switch", { name: "切回桌面时恢复分辨率" });
-    await user.click(toggle);
-    expect(onRestoreOnFocusLossChange).toHaveBeenCalledWith(true);
-
-    rerender(<SettingsPage {...props} loading />);
-    expect(toggle).toBeDisabled();
-
-    rerender(
-      <SettingsPage
-        {...props}
-        restoreOnFocusLoss
-        runtimeBusy
-      />,
-    );
-    expect(toggle).toBeChecked();
-    expect(toggle).toBeDisabled();
   });
 });

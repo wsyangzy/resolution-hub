@@ -1,5 +1,4 @@
 import {
-  Gamepad2,
   Info,
   Moon,
   MonitorCog,
@@ -21,9 +20,6 @@ export interface SettingsPageProps {
   minimizeBehavior: MinimizeBehavior;
   closeBehavior: CloseBehavior;
   confirmCloseBehavior: boolean;
-  restoreOnFocusLoss: boolean;
-  loading: boolean;
-  runtimeBusy: boolean;
   version: string;
   onAutoStartChange: (enabled: boolean) => Promise<void> | void;
   onWindowPreferencesChange: (
@@ -31,7 +27,6 @@ export interface SettingsPageProps {
     behavior: CloseBehavior,
     confirmCloseBehavior: boolean,
   ) => Promise<void> | void;
-  onRestoreOnFocusLossChange: (enabled: boolean) => Promise<void> | void;
   onToast: (message: string, tone?: PageToastTone) => void;
 }
 
@@ -67,18 +62,13 @@ export function SettingsPage({
   minimizeBehavior,
   closeBehavior,
   confirmCloseBehavior,
-  restoreOnFocusLoss,
-  loading,
-  runtimeBusy,
   version,
   onAutoStartChange,
   onWindowPreferencesChange,
-  onRestoreOnFocusLossChange,
   onToast,
 }: SettingsPageProps) {
   const [theme, setTheme] = useState<ThemePreference>(currentTheme);
   const [autoStartSaving, setAutoStartSaving] = useState(false);
-  const [restoreSettingSaving, setRestoreSettingSaving] = useState(false);
   const [windowSettingSaving, setWindowSettingSaving] = useState<"minimize" | "close" | "prompt" | null>(null);
 
   useEffect(() => {
@@ -92,25 +82,6 @@ export function SettingsPage({
       window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
     } catch {
       onToast("主题已切换，但无法保存主题偏好", "error");
-    }
-  };
-
-  const updateRestoreOnFocusLoss = async (enabled: boolean) => {
-    if (restoreSettingSaving || loading || runtimeBusy || enabled === restoreOnFocusLoss) {
-      return;
-    }
-
-    setRestoreSettingSaving(true);
-    try {
-      await onRestoreOnFocusLossChange(enabled);
-      onToast(
-        enabled ? "已启用切回桌面时恢复分辨率" : "已关闭切回桌面时恢复分辨率",
-        "success",
-      );
-    } catch (error) {
-      onToast(errorMessage(error, "更新桌面分辨率恢复设置失败"), "error");
-    } finally {
-      setRestoreSettingSaving(false);
     }
   };
 
@@ -197,41 +168,6 @@ export function SettingsPage({
               ariaLabel="颜色主题"
               className="theme-tabs"
             />
-          </div>
-        </section>
-
-        <section className="settings-section" aria-labelledby="game-display-title">
-          <header className="settings-section-header">
-            <span className="settings-section-icon" aria-hidden="true">
-              <Gamepad2 size={19} />
-            </span>
-            <div>
-              <h2 id="game-display-title">游戏显示</h2>
-              <p>控制游戏与桌面之间的显示模式切换。</p>
-            </div>
-          </header>
-          <div className="setting-row">
-            <div className="setting-copy">
-              <strong>切回桌面时恢复分辨率</strong>
-              <span>
-                {loading
-                  ? "正在读取应用设置"
-                  : runtimeBusy
-                  ? "游戏会话结束后可修改此设置"
-                  : restoreOnFocusLoss
-                    ? "游戏切到后台时恢复桌面模式，返回游戏后重新应用游戏模式"
-                    : "仅在游戏启动和退出时切换显示模式"}
-              </span>
-            </div>
-            <div className="setting-control-with-status">
-              {restoreSettingSaving && <span className="setting-saving">保存中</span>}
-              <MotionSwitch
-                checked={restoreOnFocusLoss}
-                disabled={restoreSettingSaving || loading || runtimeBusy}
-                onCheckedChange={(enabled) => void updateRestoreOnFocusLoss(enabled)}
-                ariaLabel="切回桌面时恢复分辨率"
-              />
-            </div>
           </div>
         </section>
 

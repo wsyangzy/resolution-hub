@@ -13,7 +13,6 @@ vi.mock("./lib/tauri", () => ({
     getSettings: vi.fn(),
     setDefaultDisplayMode: vi.fn(),
     setCloseBehavior: vi.fn(),
-    setRestoreOnFocusLoss: vi.fn(),
     getAutoStartEnabled: vi.fn(),
     setAutoStartEnabled: vi.fn(),
     listProfiles: vi.fn(),
@@ -31,6 +30,8 @@ vi.mock("./lib/tauri", () => ({
     getPendingRestore: vi.fn(),
     restoreDisplay: vi.fn(),
     cancelLaunchWait: vi.fn(),
+    ensureWindowSize: vi.fn(),
+    setWindowSizePersistenceSuspended: vi.fn(),
     minimize: vi.fn(),
     toggleMaximize: vi.fn(),
     hide: vi.fn(),
@@ -108,7 +109,6 @@ function resetApi() {
     minimizeBehavior: "taskbar",
     closeBehavior: "hideToTray",
     confirmCloseBehavior: true,
-    restoreOnFocusLoss: false,
   });
   vi.mocked(tauriApi.setCloseBehavior).mockImplementation(async (
     closeBehavior,
@@ -119,16 +119,6 @@ function resetApi() {
     minimizeBehavior,
     closeBehavior,
     confirmCloseBehavior,
-    restoreOnFocusLoss: false,
-  }));
-  vi.mocked(tauriApi.setRestoreOnFocusLoss).mockImplementation(async (
-    restoreOnFocusLoss,
-  ) => ({
-    defaultDisplayModes: [mode],
-    minimizeBehavior: "taskbar",
-    closeBehavior: "hideToTray",
-    confirmCloseBehavior: true,
-    restoreOnFocusLoss,
   }));
   vi.mocked(tauriApi.getAutoStartEnabled).mockResolvedValue(false);
   vi.mocked(tauriApi.setAutoStartEnabled).mockImplementation(async (enabled) => enabled);
@@ -141,6 +131,7 @@ function resetApi() {
   vi.mocked(tauriApi.getPendingRestore).mockResolvedValue(null);
   vi.mocked(tauriApi.restoreDisplay).mockResolvedValue(undefined);
   vi.mocked(tauriApi.cancelLaunchWait).mockResolvedValue(undefined);
+  vi.mocked(tauriApi.ensureWindowSize).mockResolvedValue(undefined);
   vi.mocked(tauriApi.minimize).mockResolvedValue(undefined);
   vi.mocked(tauriApi.toggleMaximize).mockResolvedValue(undefined);
   vi.mocked(tauriApi.hide).mockResolvedValue(undefined);
@@ -257,6 +248,9 @@ describe("App controller", () => {
     act(() => runtimeHandler?.({ ...idle, message: "已取消等待" }));
 
     await waitFor(() => {
+      expect(tauriApi.ensureWindowSize).toHaveBeenCalledOnce();
+      expect(tauriApi.setWindowSizePersistenceSuspended).toHaveBeenCalledWith(true);
+      expect(tauriApi.setWindowSizePersistenceSuspended).toHaveBeenLastCalledWith(false);
       expect(tauriApi.enumerateDisplays).toHaveBeenCalledTimes(initialDisplayCalls + 1);
     });
     unmount();
@@ -298,7 +292,6 @@ describe("App controller", () => {
       minimizeBehavior: "taskbar",
       closeBehavior: "hideToTray",
       confirmCloseBehavior: false,
-      restoreOnFocusLoss: false,
     });
     render(<App />);
     await screen.findByRole("button", { name: "添加第一个游戏" });
@@ -315,7 +308,6 @@ describe("App controller", () => {
       minimizeBehavior: "taskbar",
       closeBehavior: "hideToTray",
       confirmCloseBehavior: false,
-      restoreOnFocusLoss: false,
     });
     render(<App />);
     await screen.findByRole("button", { name: "添加第一个游戏" });
@@ -369,7 +361,6 @@ describe("App controller", () => {
       minimizeBehavior: "taskbar",
       closeBehavior: "exit",
       confirmCloseBehavior: false,
-      restoreOnFocusLoss: false,
     });
     vi.mocked(tauriApi.getPendingRestore).mockResolvedValue({
       profileName: "Test Game",
@@ -405,18 +396,6 @@ describe("App controller", () => {
 
     await waitFor(() => expect(toggle).not.toBeChecked());
     expect(screen.getByRole("alert")).toHaveTextContent("注册表写入失败");
-  });
-
-  it("persists the focus-loss resolution setting", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.click(screen.getByRole("button", { name: "应用设置" }));
-    const toggle = await screen.findByRole("switch", { name: "切回桌面时恢复分辨率" });
-    await user.click(toggle);
-
-    await waitFor(() => expect(tauriApi.setRestoreOnFocusLoss).toHaveBeenCalledWith(true));
-    await waitFor(() => expect(toggle).toBeChecked());
   });
 
   it("does not show a routine success toast", async () => {

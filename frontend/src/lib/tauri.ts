@@ -2,6 +2,7 @@ import { getVersion as getAppVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import type { PhysicalSize } from "@tauri-apps/api/dpi";
 
 import type {
   ApplicationIcon,
@@ -22,6 +23,10 @@ import type {
 const WINDOW_SIZE_STORAGE_KEY = "resolution-hub-window-size";
 const MIN_WINDOW_WIDTH = 760;
 const MIN_WINDOW_HEIGHT = 560;
+// Windows WM_SIZE excludes the invisible resize frame of undecorated windows.
+const WINDOW_FRAME_TOLERANCE = 32;
+const MIN_STORED_WINDOW_WIDTH = MIN_WINDOW_WIDTH - WINDOW_FRAME_TOLERANCE;
+const MIN_STORED_WINDOW_HEIGHT = MIN_WINDOW_HEIGHT - WINDOW_FRAME_TOLERANCE;
 const MAX_WINDOW_DIMENSION = 10_000;
 
 interface StoredWindowSize {
@@ -29,14 +34,19 @@ interface StoredWindowSize {
   height: number;
 }
 
+type AppWindow = ReturnType<typeof getCurrentWindow>;
+
+let windowSizePersistenceSuspended = false;
+let nativeResizeVersion = 0;
+
 function readStoredWindowSize(): StoredWindowSize | null {
   try {
     const value = JSON.parse(window.localStorage.getItem(WINDOW_SIZE_STORAGE_KEY) ?? "null");
     if (
       Number.isInteger(value?.width)
       && Number.isInteger(value?.height)
-      && value.width >= MIN_WINDOW_WIDTH
-      && value.height >= MIN_WINDOW_HEIGHT
+      && value.width >= MIN_STORED_WINDOW_WIDTH
+      && value.height >= MIN_STORED_WINDOW_HEIGHT
       && value.width <= MAX_WINDOW_DIMENSION
       && value.height <= MAX_WINDOW_DIMENSION
     ) {
@@ -48,34 +58,128 @@ function readStoredWindowSize(): StoredWindowSize | null {
   return null;
 }
 
-function storeWindowSize() {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  if (width < MIN_WINDOW_WIDTH || height < MIN_WINDOW_HEIGHT) {
+function clampWindowDimension(value: number, minimum: number) {
+  if (!Number.isFinite(value)) {
+    return minimum;
+  }
+  return Math.min(MAX_WINDOW_DIMENSION, Math.max(minimum, Math.round(value)));
+}
+
+function writeStoredWindowSize(size: { width: number; height: number }) {
+  if (
+    !Number.isFinite(size.width)
+    || !Number.isFinite(size.height)
+    || size.width < MIN_STORED_WINDOW_WIDTH
+    || size.height < MIN_STORED_WINDOW_HEIGHT
+  ) {
     return;
   }
+
+  const value = {
+    width: clampWindowDimension(size.width, MIN_STORED_WINDOW_WIDTH),
+    height: clampWindowDimension(size.height, MIN_STORED_WINDOW_HEIGHT),
+  };
   try {
-    window.localStorage.setItem(WINDOW_SIZE_STORAGE_KEY, JSON.stringify({ width, height }));
+    window.localStorage.setItem(WINDOW_SIZE_STORAGE_KEY, JSON.stringify(value));
   } catch {
     // Window persistence must never block normal window operation.
   }
 }
 
+function storeWindowSize() {
+  if (windowSizePersistenceSuspended) {
+    return;
+  }
+  writeStoredWindowSize({ width: window.innerWidth, height: window.innerHeight });
+}
+
+async function persistNativeWindowSize(
+  appWindow: AppWindow,
+  physicalSize: PhysicalSize,
+  version: number,
+) {
+  const scaleFactor = await appWindow.scaleFactor();
+  if (windowSizePersistenceSuspended || version !== nativeResizeVersion) {
+    return;
+  }
+  writeStoredWindowSize(physicalSize.toLogical(scaleFactor));
+}
+
+function handleNativeWindowResize(appWindow: AppWindow, physicalSize: PhysicalSize) {
+  if (windowSizePersistenceSuspended) {
+    return;
+  }
+  const version = ++nativeResizeVersion;
+  void persistNativeWindowSize(appWindow, physicalSize, version).catch(() => undefined);
+}
+
+function setWindowSizePersistenceSuspended(suspended: boolean) {
+  windowSizePersistenceSuspended = suspended;
+  nativeResizeVersion += 1;
+}
+
+async function ensureWindowSize(appWindow: AppWindow = getCurrentWindow()) {
+  try {
+    await appWindow.setSizeConstraints({
+      minWidth: MIN_WINDOW_WIDTH,
+      minHeight: MIN_WINDOW_HEIGHT,
+    });
+  } catch {
+    // The static Tauri window constraints remain as a fallback.
+  }
+
+  const stored = readStoredWindowSize();
+  if (stored) {
+    await appWindow.setSize(new LogicalSize(stored.width, stored.height));
+    return;
+  }
+
+  const scaleFactor = await appWindow.scaleFactor();
+  const currentSize = (await appWindow.innerSize()).toLogical(scaleFactor);
+  const target = {
+    width: clampWindowDimension(currentSize.width, MIN_WINDOW_WIDTH),
+    height: clampWindowDimension(currentSize.height, MIN_WINDOW_HEIGHT),
+  };
+  await appWindow.setSize(new LogicalSize(target.width, target.height));
+}
+
 export const tauriApi = {
   initializeWindowSizePersistence: async () => {
     const stored = readStoredWindowSize();
-    if (stored) {
-      try {
-        const appWindow = getCurrentWindow();
-        await appWindow.setSize(new LogicalSize(stored.width, stored.height));
+    let appWindow: AppWindow | undefined;
+    try {
+      appWindow = getCurrentWindow();
+      await ensureWindowSize(appWindow);
+      if (stored) {
         await appWindow.center();
+      }
+    } catch {
+      // Browser-only development and denied window permissions keep the default size.
+    }
+
+    let releaseNativeResize: (() => void) | undefined;
+    const nativeWindow = appWindow;
+    if (nativeWindow) {
+      try {
+        releaseNativeResize = await nativeWindow.onResized(({ payload }) => {
+          handleNativeWindowResize(nativeWindow, payload);
+        });
       } catch {
-        // Browser-only development and denied window permissions keep the default size.
+        // Fall back to the browser resize event when native events are unavailable.
       }
     }
-    window.addEventListener("resize", storeWindowSize);
-    return () => window.removeEventListener("resize", storeWindowSize);
+    if (!releaseNativeResize) {
+      window.addEventListener("resize", storeWindowSize);
+    }
+    return () => {
+      releaseNativeResize?.();
+      if (!releaseNativeResize) {
+        window.removeEventListener("resize", storeWindowSize);
+      }
+    };
   },
+  ensureWindowSize,
+  setWindowSizePersistenceSuspended,
   enumerateDisplays: () => invoke<DisplayInfo[]>("enumerate_displays"),
   enumerateDisplayModes: (deviceName: string) =>
     invoke<DisplayMode[]>("enumerate_display_modes", { deviceName }),
@@ -91,8 +195,6 @@ export const tauriApi = {
     confirmCloseBehavior,
     minimizeBehavior,
   }),
-  setRestoreOnFocusLoss: (enabled: boolean) =>
-    invoke<AppSettings>("set_restore_on_focus_loss", { enabled }),
   getAutoStartEnabled: () => invoke<boolean>("get_auto_start_enabled"),
   setAutoStartEnabled: (enabled: boolean) =>
     invoke<boolean>("set_auto_start_enabled", { enabled }),

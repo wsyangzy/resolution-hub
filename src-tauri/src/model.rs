@@ -49,7 +49,6 @@ pub struct AppSettings {
     pub minimize_behavior: MinimizeBehavior,
     pub close_behavior: CloseBehavior,
     pub confirm_close_behavior: bool,
-    pub restore_on_focus_loss: bool,
 }
 
 impl Default for AppSettings {
@@ -59,7 +58,6 @@ impl Default for AppSettings {
             minimize_behavior: MinimizeBehavior::Taskbar,
             close_behavior: CloseBehavior::HideToTray,
             confirm_close_behavior: true,
-            restore_on_focus_loss: false,
         }
     }
 }
@@ -75,8 +73,6 @@ struct StoredAppSettings {
     close_behavior: CloseBehavior,
     #[serde(default)]
     confirm_close_behavior: Option<bool>,
-    #[serde(default)]
-    restore_on_focus_loss: bool,
 }
 
 impl<'de> Deserialize<'de> for AppSettings {
@@ -95,7 +91,6 @@ impl<'de> Deserialize<'de> for AppSettings {
                 stored.close_behavior
             },
             confirm_close_behavior: stored.confirm_close_behavior.unwrap_or(legacy_ask),
-            restore_on_focus_loss: stored.restore_on_focus_loss,
         })
     }
 }
@@ -303,26 +298,19 @@ mod tests {
         let configured: AppSettings =
             serde_json::from_str(r#"{"defaultDisplayModes":[],"closeBehavior":"exit"}"#).unwrap();
         let current: AppSettings = serde_json::from_str(
-            r#"{"defaultDisplayModes":[],"closeBehavior":"hideToTray","confirmCloseBehavior":true,"restoreOnFocusLoss":true}"#,
+            r#"{"defaultDisplayModes":[],"closeBehavior":"hideToTray","confirmCloseBehavior":true}"#,
         )
         .unwrap();
 
         assert_eq!(unconfigured.close_behavior, CloseBehavior::HideToTray);
         assert_eq!(unconfigured.minimize_behavior, MinimizeBehavior::Taskbar);
         assert!(unconfigured.confirm_close_behavior);
-        assert!(!unconfigured.restore_on_focus_loss);
         assert_eq!(configured.close_behavior, CloseBehavior::Exit);
         assert_eq!(configured.minimize_behavior, MinimizeBehavior::Taskbar);
         assert!(!configured.confirm_close_behavior);
-        assert!(!configured.restore_on_focus_loss);
         assert_eq!(current.close_behavior, CloseBehavior::HideToTray);
         assert_eq!(current.minimize_behavior, MinimizeBehavior::Taskbar);
         assert!(current.confirm_close_behavior);
-        assert!(current.restore_on_focus_loss);
-        assert_eq!(
-            serde_json::to_value(&current).unwrap()["restoreOnFocusLoss"],
-            true
-        );
         assert_eq!(
             serde_json::to_string(&CloseBehavior::HideToTray).unwrap(),
             r#""hideToTray""#

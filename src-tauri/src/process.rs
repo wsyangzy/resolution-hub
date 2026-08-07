@@ -2,7 +2,7 @@ use std::{mem::size_of, path::PathBuf};
 
 use windows::{
     Win32::{
-        Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT},
+        Foundation::{CloseHandle, WAIT_OBJECT_0, WAIT_TIMEOUT},
         System::{
             Diagnostics::ToolHelp::{
                 CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
@@ -13,7 +13,6 @@ use windows::{
                 PROCESS_SYNCHRONIZE, QueryFullProcessImageNameW, WaitForSingleObject,
             },
         },
-        UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
     },
     core::PWSTR,
 };
@@ -23,39 +22,6 @@ pub struct ProcessInfo {
     pub pid: u32,
     pub process_name: String,
     pub executable: Option<PathBuf>,
-}
-
-pub(crate) struct ProcessWaiter {
-    handle: HANDLE,
-}
-
-impl ProcessWaiter {
-    pub(crate) fn open(pid: u32) -> Option<Self> {
-        if pid == 0 {
-            return None;
-        }
-        let handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid) }.ok()?;
-        Some(Self { handle })
-    }
-
-    pub(crate) fn wait(&self, timeout_ms: u32) -> Option<bool> {
-        let result = unsafe { WaitForSingleObject(self.handle, timeout_ms) };
-        if result == WAIT_OBJECT_0 {
-            Some(true)
-        } else if result == WAIT_TIMEOUT {
-            Some(false)
-        } else {
-            None
-        }
-    }
-}
-
-impl Drop for ProcessWaiter {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.handle);
-        }
-    }
 }
 
 fn utf16_array(value: &[u16]) -> String {
@@ -147,27 +113,36 @@ pub fn find_pid(process_name: &str) -> Option<u32> {
     }
 }
 
-pub fn wait_for_exit(pid: u32) -> bool {
-    ProcessWaiter::open(pid).and_then(|waiter| waiter.wait(INFINITE)) == Some(true)
+pub fn is_running(process_name: &str) -> bool {
+    find_pid(process_name).is_some()
 }
 
-pub fn foreground_pid() -> Option<u32> {
-    let window = unsafe { GetForegroundWindow() };
-    if window.is_invalid() {
+pub fn wait_for_exit(pid: u32) -> bool {
+    wait_for_exit_timeout(pid, INFINITE) == Some(true)
+}
+
+fn wait_for_exit_timeout(pid: u32, timeout_ms: u32) -> Option<bool> {
+    if pid == 0 {
         return None;
     }
 
-    let mut pid = 0;
-    if unsafe { GetWindowThreadProcessId(window, Some(&mut pid)) } == 0 || pid == 0 {
-        None
-    } else {
-        Some(pid)
+    unsafe {
+        let process = OpenProcess(PROCESS_SYNCHRONIZE, false, pid).ok()?;
+        let result = WaitForSingleObject(process, timeout_ms);
+        let _ = CloseHandle(process);
+        if result == WAIT_OBJECT_0 {
+            Some(true)
+        } else if result == WAIT_TIMEOUT {
+            Some(false)
+        } else {
+            None
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ProcessWaiter, find_pid};
+    use super::{find_pid, wait_for_exit_timeout};
 
     #[test]
     fn finds_the_current_process() {
@@ -182,7 +157,6 @@ mod tests {
 
     #[test]
     fn current_process_is_not_signaled() {
-        let waiter = ProcessWaiter::open(std::process::id()).expect("current process should open");
-        assert_eq!(waiter.wait(0), Some(false));
+        assert_eq!(wait_for_exit_timeout(std::process::id(), 0), Some(false));
     }
 }
