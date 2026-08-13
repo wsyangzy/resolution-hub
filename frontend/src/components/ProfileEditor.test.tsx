@@ -42,6 +42,7 @@ const profile: GameProfile = {
   steamAppId: "",
   shortcutPath: "",
   launcherProvider: "",
+  launcherProcessName: "",
   processName: "game.exe",
   switchTiming: "beforeLaunch",
   launchTimeoutSec: 600,
@@ -73,7 +74,7 @@ describe("ProfileEditor", () => {
     vi.mocked(tauriApi.listSteamGames).mockResolvedValue([]);
     vi.mocked(tauriApi.listRecentApps).mockResolvedValue([]);
     vi.mocked(tauriApi.getApplicationIcon).mockResolvedValue(null);
-    vi.mocked(tauriApi.openLaunchSource).mockResolvedValue(undefined);
+    vi.mocked(tauriApi.openLaunchSource).mockResolvedValue(true);
     vi.mocked(tauriApi.detectGameProcess).mockResolvedValue([]);
   });
 
@@ -86,6 +87,7 @@ describe("ProfileEditor", () => {
       executable: "",
       shortcutPath: "E:\\无畏契约.lnk",
       launcherProvider: "Riot Client",
+      launcherProcessName: "",
       processName: "VALORANT-Win64-Shipping.exe",
     };
     renderEditor({ profile: null, profiles: [valorantProfile] });
@@ -131,6 +133,7 @@ describe("ProfileEditor", () => {
   it("uses the two-stage launcher detection flow and accepts a candidate", async () => {
     const user = userEvent.setup();
     vi.mocked(tauriApi.selectShortcut).mockResolvedValue("C:\\Games\\Launcher.lnk");
+    vi.mocked(tauriApi.openLaunchSource).mockResolvedValue(false);
     const candidates: RecentApplication[] = [
       {
         pid: 101,
@@ -157,6 +160,7 @@ describe("ProfileEditor", () => {
     await user.click(screen.getByRole("button", { name: "打开启动器" }));
     await waitFor(() => expect(tauriApi.openLaunchSource).toHaveBeenCalledTimes(1));
     expect(tauriApi.detectGameProcess).not.toHaveBeenCalled();
+    expect(screen.getByText(/检测到启动器已在运行/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "开始识别" }));
     await screen.findByRole("button", { name: "actual-game.exe" });
@@ -167,6 +171,7 @@ describe("ProfileEditor", () => {
       launchType: "shortcut",
       launchBeforeDetect: false,
       shortcutPath: "C:\\Games\\Launcher.lnk",
+      launcherProcessName: "",
     }));
   });
 
@@ -186,6 +191,36 @@ describe("ProfileEditor", () => {
     expect(screen.getByText("有未保存更改")).toBeInTheDocument();
   });
 
+  it("saves the configured launcher process for shortcut reuse", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    renderEditor({
+      profile: {
+        ...profile,
+        launchType: "shortcut",
+        executable: "",
+        shortcutPath: "C:\\Games\\Launcher.lnk",
+        launcherProvider: "启动器",
+        launcherProcessName: "launcher.exe",
+        processName: "actual-game.exe",
+        switchTiming: "onProcessDetected",
+      },
+      onSave,
+    });
+    await waitFor(() => expect(tauriApi.enumerateDisplayModes).toHaveBeenCalledWith("DISPLAY1"));
+
+    const launcherProcess = screen.getByLabelText("启动器进程");
+    expect(launcherProcess).toHaveValue("launcher.exe");
+    await user.clear(launcherProcess);
+    await user.type(launcherProcess, "client.exe");
+    await user.click(screen.getByRole("button", { name: "保存配置" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]?.[0]).toMatchObject({
+      launcherProcessName: "client.exe",
+      processName: "actual-game.exe",
+    });
+  });
   it("selects a display mode through the styled keyboard-accessible menu", async () => {
     const user = userEvent.setup();
     vi.mocked(tauriApi.enumerateDisplayModes).mockResolvedValue([

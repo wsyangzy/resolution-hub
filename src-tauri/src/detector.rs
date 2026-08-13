@@ -15,7 +15,7 @@ pub fn detect(request: &DetectLaunchRequest) -> Result<Vec<RecentApplication>, S
         .map(|process| process.pid)
         .collect();
     if request.launch_before_detect {
-        launcher::launch_request(request)?;
+        launcher::launch_request(request).map(|_| ())?;
     }
 
     let timeout_sec = if matches!(request.launch_type, LaunchType::Shortcut) {

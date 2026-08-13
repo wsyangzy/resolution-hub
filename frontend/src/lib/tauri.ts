@@ -1,7 +1,7 @@
 import { getVersion as getAppVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { currentMonitor, getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import type { PhysicalSize } from "@tauri-apps/api/dpi";
 
 import type {
@@ -36,8 +36,9 @@ interface StoredWindowSize {
 
 type AppWindow = ReturnType<typeof getCurrentWindow>;
 
-let windowSizePersistenceSuspended = false;
-let nativeResizeVersion = 0;
+let runtimeWindowSizePersistenceSuspended = false;
+let transientWindowSizePersistenceLocks = 0;
+let nativeSizeEventVersion = 0;
 
 function readStoredWindowSize(): StoredWindowSize | null {
   try {
@@ -86,8 +87,12 @@ function writeStoredWindowSize(size: { width: number; height: number }) {
   }
 }
 
+function isWindowSizePersistenceSuspended() {
+  return runtimeWindowSizePersistenceSuspended || transientWindowSizePersistenceLocks > 0;
+}
+
 function storeWindowSize() {
-  if (windowSizePersistenceSuspended) {
+  if (isWindowSizePersistenceSuspended()) {
     return;
   }
   writeStoredWindowSize({ width: window.innerWidth, height: window.innerHeight });
@@ -99,48 +104,113 @@ async function persistNativeWindowSize(
   version: number,
 ) {
   const scaleFactor = await appWindow.scaleFactor();
-  if (windowSizePersistenceSuspended || version !== nativeResizeVersion) {
+  persistNativeWindowSizeAtScale(physicalSize, scaleFactor, version);
+}
+
+function persistNativeWindowSizeAtScale(
+  physicalSize: PhysicalSize,
+  scaleFactor: number,
+  version: number,
+) {
+  if (isWindowSizePersistenceSuspended() || version !== nativeSizeEventVersion) {
     return;
   }
   writeStoredWindowSize(physicalSize.toLogical(scaleFactor));
 }
 
 function handleNativeWindowResize(appWindow: AppWindow, physicalSize: PhysicalSize) {
-  if (windowSizePersistenceSuspended) {
+  if (isWindowSizePersistenceSuspended()) {
     return;
   }
-  const version = ++nativeResizeVersion;
+  const version = ++nativeSizeEventVersion;
   void persistNativeWindowSize(appWindow, physicalSize, version).catch(() => undefined);
 }
 
+function handleNativeWindowScaleChange(physicalSize: PhysicalSize, scaleFactor: number) {
+  if (isWindowSizePersistenceSuspended()) {
+    return;
+  }
+  const version = ++nativeSizeEventVersion;
+  persistNativeWindowSizeAtScale(physicalSize, scaleFactor, version);
+}
+
 function setWindowSizePersistenceSuspended(suspended: boolean) {
-  windowSizePersistenceSuspended = suspended;
-  nativeResizeVersion += 1;
+  runtimeWindowSizePersistenceSuspended = suspended;
+  nativeSizeEventVersion += 1;
+}
+
+function acquireWindowSizePersistenceLock() {
+  transientWindowSizePersistenceLocks += 1;
+  nativeSizeEventVersion += 1;
+  return () => {
+    transientWindowSizePersistenceLocks = Math.max(0, transientWindowSizePersistenceLocks - 1);
+    nativeSizeEventVersion += 1;
+  };
+}
+
+async function getLogicalWorkAreaLimit(): Promise<StoredWindowSize | null> {
+  try {
+    const monitor = await currentMonitor();
+    if (!monitor) {
+      return null;
+    }
+    const workArea = monitor.workArea.size.toLogical(monitor.scaleFactor);
+    return {
+      width: Math.max(1, Math.floor(workArea.width - WINDOW_FRAME_TOLERANCE)),
+      height: Math.max(1, Math.floor(workArea.height - WINDOW_FRAME_TOLERANCE)),
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function ensureWindowSize(appWindow: AppWindow = getCurrentWindow()) {
+  const workAreaLimit = await getLogicalWorkAreaLimit();
+  const minimumWidth = workAreaLimit
+    ? Math.min(MIN_WINDOW_WIDTH, workAreaLimit.width)
+    : MIN_WINDOW_WIDTH;
+  const minimumHeight = workAreaLimit
+    ? Math.min(MIN_WINDOW_HEIGHT, workAreaLimit.height)
+    : MIN_WINDOW_HEIGHT;
   try {
     await appWindow.setSizeConstraints({
-      minWidth: MIN_WINDOW_WIDTH,
-      minHeight: MIN_WINDOW_HEIGHT,
+      minWidth: minimumWidth,
+      minHeight: minimumHeight,
     });
   } catch {
     // The static Tauri window constraints remain as a fallback.
   }
 
   const stored = readStoredWindowSize();
-  if (stored) {
-    await appWindow.setSize(new LogicalSize(stored.width, stored.height));
-    return;
+  let requested = stored;
+  if (!requested) {
+    const scaleFactor = await appWindow.scaleFactor();
+    requested = (await appWindow.innerSize()).toLogical(scaleFactor);
   }
 
-  const scaleFactor = await appWindow.scaleFactor();
-  const currentSize = (await appWindow.innerSize()).toLogical(scaleFactor);
   const target = {
-    width: clampWindowDimension(currentSize.width, MIN_WINDOW_WIDTH),
-    height: clampWindowDimension(currentSize.height, MIN_WINDOW_HEIGHT),
+    width: Math.min(
+      clampWindowDimension(
+        requested.width,
+        stored ? MIN_STORED_WINDOW_WIDTH : minimumWidth,
+      ),
+      workAreaLimit?.width ?? MAX_WINDOW_DIMENSION,
+    ),
+    height: Math.min(
+      clampWindowDimension(
+        requested.height,
+        stored ? MIN_STORED_WINDOW_HEIGHT : minimumHeight,
+      ),
+      workAreaLimit?.height ?? MAX_WINDOW_DIMENSION,
+    ),
   };
   await appWindow.setSize(new LogicalSize(target.width, target.height));
+  if (target.width < requested.width || target.height < requested.height) {
+    await appWindow.center().catch(() => undefined);
+  }
+  if (!stored && !isWindowSizePersistenceSuspended()) {
+    writeStoredWindowSize(target);
+  }
 }
 
 export const tauriApi = {
@@ -158,6 +228,7 @@ export const tauriApi = {
     }
 
     let releaseNativeResize: (() => void) | undefined;
+    let releaseNativeScaleChange: (() => void) | undefined;
     const nativeWindow = appWindow;
     if (nativeWindow) {
       try {
@@ -167,12 +238,20 @@ export const tauriApi = {
       } catch {
         // Fall back to the browser resize event when native events are unavailable.
       }
+      try {
+        releaseNativeScaleChange = await nativeWindow.onScaleChanged(({ payload }) => {
+          handleNativeWindowScaleChange(payload.size, payload.scaleFactor);
+        });
+      } catch {
+        // Resize events still preserve the window size on runtimes without scale events.
+      }
     }
     if (!releaseNativeResize) {
       window.addEventListener("resize", storeWindowSize);
     }
     return () => {
       releaseNativeResize?.();
+      releaseNativeScaleChange?.();
       if (!releaseNativeResize) {
         window.removeEventListener("resize", storeWindowSize);
       }
@@ -184,8 +263,16 @@ export const tauriApi = {
   enumerateDisplayModes: (deviceName: string) =>
     invoke<DisplayMode[]>("enumerate_display_modes", { deviceName }),
   getSettings: () => invoke<AppSettings>("get_settings"),
-  setDefaultDisplayMode: (mode: DisplayMode) =>
-    invoke<AppSettings>("set_default_display_mode", { mode }),
+  setDefaultDisplayMode: async (mode: DisplayMode) => {
+    const releasePersistenceLock = acquireWindowSizePersistenceLock();
+    try {
+      const settings = await invoke<AppSettings>("set_default_display_mode", { mode });
+      await ensureWindowSize().catch(() => undefined);
+      return settings;
+    } finally {
+      releasePersistenceLock();
+    }
+  },
   setCloseBehavior: (
     closeBehavior: CloseBehavior,
     confirmCloseBehavior: boolean,
@@ -209,10 +296,17 @@ export const tauriApi = {
   getApplicationIcon: (request: ApplicationIconRequest) =>
     invoke<ApplicationIcon | null>("get_application_icon", { request }),
   openLaunchSource: (request: DetectLaunchRequest) =>
-    invoke<void>("open_launch_source", { request }),
+    invoke<boolean>("open_launch_source", { request }),
   detectGameProcess: (request: DetectLaunchRequest) =>
     invoke<RecentApplication[]>("detect_game_process", { request }),
-  launchProfile: (id: string) => invoke<void>("launch_profile", { id }),
+  launchProfile: async (id: string) => {
+    const releasePersistenceLock = acquireWindowSizePersistenceLock();
+    try {
+      await invoke<void>("launch_profile", { id });
+    } finally {
+      releasePersistenceLock();
+    }
+  },
   getRuntimeStatus: () => invoke<RuntimeStatus>("get_runtime_status"),
   getPendingRestore: () =>
     invoke<PendingRestore | null>("get_pending_restore"),

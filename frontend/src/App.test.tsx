@@ -77,6 +77,7 @@ const profile: GameProfile = {
   steamAppId: "",
   shortcutPath: "",
   launcherProvider: "",
+  launcherProcessName: "",
   processName: "test.exe",
   switchTiming: "beforeLaunch",
   launchTimeoutSec: 600,
@@ -257,6 +258,35 @@ describe("App controller", () => {
     expect(runtimeUnlistenSpy).toHaveBeenCalledTimes(1);
     expect(windowUnlistenSpy).toHaveBeenCalledTimes(1);
     expect(trayUnlistenSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("normalizes the logical window size after the display switch completes", async () => {
+    const { unmount } = render(<App />);
+    await screen.findByRole("button", { name: "添加第一个游戏" });
+    vi.mocked(tauriApi.ensureWindowSize).mockClear();
+    vi.mocked(tauriApi.setWindowSizePersistenceSuspended).mockClear();
+
+    act(() => runtimeHandler?.({
+      ...idle,
+      phase: "switching",
+      profileId: "game-1",
+      profileName: "Test Game",
+      message: "正在切换显示模式",
+    }));
+    act(() => runtimeHandler?.({
+      ...idle,
+      phase: "running",
+      profileId: "game-1",
+      profileName: "Test Game",
+      message: "游戏运行中",
+      canRestore: true,
+    }));
+
+    await waitFor(() => {
+      expect(tauriApi.ensureWindowSize).toHaveBeenCalledOnce();
+      expect(tauriApi.setWindowSizePersistenceSuspended).toHaveBeenLastCalledWith(true);
+    });
+    unmount();
   });
 
   it("lets the user disable future close prompts before hiding to tray", async () => {

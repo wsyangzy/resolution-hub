@@ -66,6 +66,7 @@ interface DraftState {
   steamAppId: string;
   shortcutPath: string;
   launcherProvider: string;
+  launcherProcessName: string;
   processName: string;
   switchTiming: SwitchTiming;
   launchTimeoutMinutes: string;
@@ -151,6 +152,7 @@ function initialDraft(profile: GameProfile | null, displays: DisplayInfo[]): Dra
     steamAppId: profile?.steamAppId ?? "",
     shortcutPath: profile?.shortcutPath ?? "",
     launcherProvider: profile?.launcherProvider ?? "",
+    launcherProcessName: profile?.launcherProcessName ?? "",
     processName: profile?.processName ?? "",
     switchTiming: profile?.switchTiming
       ?? (launchType === "executable" ? "beforeLaunch" : "onProcessDetected"),
@@ -383,6 +385,7 @@ export function ProfileEditor({
       workingDirectory: "",
       shortcutPath: "",
       launcherProvider: "",
+      launcherProcessName: "",
       processName: "",
       switchTiming: "onProcessDetected",
       selectedSource: {
@@ -408,6 +411,7 @@ export function ProfileEditor({
       steamAppId: "",
       shortcutPath: "",
       launcherProvider: "",
+      launcherProcessName: "",
       processName: application.processName,
       switchTiming: "beforeLaunch",
       selectedSource: {
@@ -437,6 +441,7 @@ export function ProfileEditor({
         steamAppId: "",
         shortcutPath: "",
         launcherProvider: "",
+        launcherProcessName: "",
         processName: filename,
         name: replaceName || !draft.name ? name : draft.name,
         switchTiming: "beforeLaunch",
@@ -472,6 +477,7 @@ export function ProfileEditor({
         workingDirectory: "",
         steamAppId: "",
         launcherProvider: riotPreset ? "Riot Client" : "启动器",
+        launcherProcessName: "",
         name,
         processName: riotPreset ? VALORANT_PROCESS_NAME : draft.processName,
         launchTimeoutMinutes: riotPreset ? "10" : draft.launchTimeoutMinutes,
@@ -499,6 +505,7 @@ export function ProfileEditor({
       workingDirectory: draft.workingDirectory.trim(),
       steamAppId: draft.steamAppId.trim(),
       shortcutPath: draft.shortcutPath.trim(),
+      launcherProcessName: draft.launcherProcessName.trim(),
       launchBeforeDetect: draft.launchType !== "shortcut",
     };
     if (request.launchType === "steam" && !request.steamAppId) {
@@ -520,12 +527,14 @@ export function ProfileEditor({
     try {
       if (request.launchType === "shortcut" && !launcherReady) {
         setDetectStatus("正在打开启动器...");
-        await tauriApi.openLaunchSource(request);
+        const launched = await tauriApi.openLaunchSource(request);
         if (!mountedRef.current || requestId !== detectRequestRef.current) {
           return;
         }
         setLauncherReady(true);
-        setDetectStatus("启动器已打开。完成登录和更新后，点击“开始识别”，再从启动器进入游戏。");
+        setDetectStatus(launched
+          ? "启动器已打开。完成登录和更新后，点击“开始识别”，再从启动器进入游戏。"
+          : "检测到启动器已在运行。点击“开始识别”，再从现有启动器进入游戏。");
         return;
       }
 
@@ -614,6 +623,9 @@ export function ProfileEditor({
       shortcutPath: draft.shortcutPath.trim(),
       launcherProvider: draft.launchType === "shortcut"
         ? (draft.launcherProvider === "Riot Client" ? "Riot Client" : "启动器")
+        : "",
+      launcherProcessName: draft.launchType === "shortcut"
+        ? draft.launcherProcessName.trim()
         : "",
       processName: draft.processName.trim(),
       switchTiming: draft.switchTiming,
@@ -1090,31 +1102,42 @@ export function ProfileEditor({
             )}
 
             {draft.launchType === "shortcut" && (
-              <label className="field field-wide" htmlFor="profile-shortcut">
-                <span className="field-label">启动器或游戏快捷方式</span>
-                <span className="input-with-action">
+              <>
+                <label className="field field-wide" htmlFor="profile-shortcut">
+                  <span className="field-label">启动器或游戏快捷方式</span>
+                  <span className="input-with-action">
+                    <input
+                      id="profile-shortcut"
+                      value={draft.shortcutPath}
+                      onChange={(event) => {
+                        patch({ shortcutPath: event.currentTarget.value });
+                        setLauncherReady(false);
+                      }}
+                      placeholder=".lnk 或 .url"
+                      required
+                    />
+                    <Tooltip label="选择快捷方式">
+                      <button
+                        type="button"
+                        className="icon-button"
+                        onClick={() => void browseShortcut(draft.launcherProvider === "Riot Client")}
+                        aria-label="选择快捷方式"
+                      >
+                        <FolderOpen size={16} />
+                      </button>
+                    </Tooltip>
+                  </span>
+                </label>
+                <label className="field field-wide" htmlFor="profile-launcher-process">
+                  <span className="field-label">启动器进程</span>
                   <input
-                    id="profile-shortcut"
-                    value={draft.shortcutPath}
-                    onChange={(event) => {
-                      patch({ shortcutPath: event.currentTarget.value });
-                      setLauncherReady(false);
-                    }}
-                    placeholder=".lnk 或 .url"
-                    required
+                    id="profile-launcher-process"
+                    value={draft.launcherProcessName}
+                    onChange={(event) => patch({ launcherProcessName: event.currentTarget.value })}
+                    placeholder="例如：RiotClientServices.exe；留空时自动解析 .lnk"
                   />
-                  <Tooltip label="选择快捷方式">
-                    <button
-                      type="button"
-                      className="icon-button"
-                      onClick={() => void browseShortcut(draft.launcherProvider === "Riot Client")}
-                      aria-label="选择快捷方式"
-                    >
-                      <FolderOpen size={16} />
-                    </button>
-                  </Tooltip>
-                </span>
-              </label>
+                </label>
+              </>
             )}
 
             <div className="field-grid field-wide">

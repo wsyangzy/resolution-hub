@@ -267,11 +267,17 @@ export default function App() {
       if (previousPhase !== runtime.phase) {
         const normalizationId = ++windowSizeNormalizationId;
         tauriApi.setWindowSizePersistenceSuspended(true);
-        if (runtime.phase === "idle" || runtime.phase === "error") {
+        const shouldNormalizeWindow = (
+          (previousPhase === "switching" && runtime.phase !== "error")
+          || runtime.phase === "idle"
+          || runtime.phase === "error"
+        );
+        if (shouldNormalizeWindow) {
           void tauriApi.ensureWindowSize().catch(() => undefined).finally(() => {
             if (
               mounted
               && normalizationId === windowSizeNormalizationId
+              && (runtime.phase === "idle" || runtime.phase === "error")
               && !runtime.canRestore
             ) {
               tauriApi.setWindowSizePersistenceSuspended(false);
@@ -418,11 +424,9 @@ export default function App() {
   }, [openConfirm, refreshProfiles, showToast]);
 
   const launchProfile = useCallback(async (profile: GameProfile) => {
-    tauriApi.setWindowSizePersistenceSuspended(true);
     try {
       await tauriApi.launchProfile(profile.id);
     } catch (error) {
-      tauriApi.setWindowSizePersistenceSuspended(false);
       showError(error);
     }
   }, [showError]);

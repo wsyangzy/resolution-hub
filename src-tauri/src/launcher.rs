@@ -1,34 +1,134 @@
-use std::{path::Path, process::Command};
+use std::{fs, path::Path, process::Command};
 
 use windows::{
     Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
     core::PCWSTR,
 };
 
-use crate::model::{DetectLaunchRequest, GameProfile, LaunchType};
+use crate::{
+    icon,
+    model::{DetectLaunchRequest, GameProfile, LaunchType},
+    process,
+};
 
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-pub fn launch(profile: &GameProfile) -> Result<(), String> {
+pub fn launch(profile: &GameProfile) -> Result<bool, String> {
     match profile.launch_type {
-        LaunchType::Executable => launch_executable(profile),
-        LaunchType::Steam => launch_steam(&profile.steam_app_id),
-        LaunchType::Shortcut => launch_shortcut(&profile.shortcut_path),
+        LaunchType::Executable => launch_executable(profile).map(|_| true),
+        LaunchType::Steam => launch_steam(&profile.steam_app_id).map(|_| true),
+        LaunchType::Shortcut => {
+            if is_launcher_running(&profile.shortcut_path, &profile.launcher_process_name) {
+                Ok(false)
+            } else {
+                launch_shortcut(&profile.shortcut_path).map(|_| true)
+            }
+        }
     }
 }
 
-pub fn launch_request(request: &DetectLaunchRequest) -> Result<(), String> {
+pub fn launch_request(request: &DetectLaunchRequest) -> Result<bool, String> {
     match request.launch_type {
         LaunchType::Executable => launch_executable_parts(
             request.executable.trim(),
             request.arguments.trim(),
             request.working_directory.trim(),
-        ),
-        LaunchType::Steam => launch_steam(&request.steam_app_id),
-        LaunchType::Shortcut => launch_shortcut(&request.shortcut_path),
+        )
+        .map(|_| true),
+        LaunchType::Steam => launch_steam(&request.steam_app_id).map(|_| true),
+        LaunchType::Shortcut => {
+            if is_launcher_running(&request.shortcut_path, &request.launcher_process_name) {
+                Ok(false)
+            } else {
+                launch_shortcut(&request.shortcut_path).map(|_| true)
+            }
+        }
     }
+}
+
+fn is_launcher_running(shortcut_path: &str, configured_process_name: &str) -> bool {
+    let candidates = launcher_process_candidates(shortcut_path, configured_process_name);
+    process::is_any_running(candidates.iter().map(String::as_str))
+}
+
+fn launcher_process_candidates(shortcut_path: &str, configured_process_name: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    push_unique_process_name(&mut candidates, configured_process_name);
+
+    let shortcut = Path::new(shortcut_path.trim());
+    if !shortcut
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("lnk"))
+    {
+        return candidates;
+    }
+    let Some(target) = icon::shortcut_target(shortcut) else {
+        return candidates;
+    };
+    launcher_process_candidates_from_target(&target, &mut candidates);
+    candidates
+}
+
+fn launcher_process_candidates_from_target(target: &Path, candidates: &mut Vec<String>) {
+    if let Some(name) = target.file_name().and_then(|name| name.to_str()) {
+        push_unique_process_name(candidates, name);
+    }
+    if let Some(directory) = target.parent() {
+        collect_launcher_executables(directory, 1, candidates);
+    }
+}
+
+fn collect_launcher_executables(directory: &Path, depth: usize, candidates: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() && depth > 0 {
+            collect_launcher_executables(&path, depth - 1, candidates);
+            continue;
+        }
+        if !file_type.is_file() || !is_launcher_executable(&path) {
+            continue;
+        }
+        if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+            push_unique_process_name(candidates, name);
+        }
+    }
+}
+
+fn is_launcher_executable(path: &Path) -> bool {
+    if !path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))
+    {
+        return false;
+    }
+    let name = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_lowercase();
+    name.contains("launcher") || name.contains("client") || name.contains("登录器")
+}
+
+fn push_unique_process_name(candidates: &mut Vec<String>, process_name: &str) {
+    let process_name = process_name.trim().trim_matches('"');
+    if process_name.is_empty()
+        || candidates
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(process_name))
+    {
+        return;
+    }
+    candidates.push(process_name.to_string());
 }
 
 fn launch_executable(profile: &GameProfile) -> Result<(), String> {
@@ -139,7 +239,12 @@ fn parse_arguments(arguments: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_arguments;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::{is_launcher_running, launcher_process_candidates_from_target, parse_arguments};
 
     #[test]
     fn parses_quoted_game_arguments() {
@@ -147,5 +252,40 @@ mod tests {
             parse_arguments(r#"-novid -path "D:\Game Data" -fullscreen"#),
             vec!["-novid", "-path", r#"D:\Game Data"#, "-fullscreen"]
         );
+    }
+
+    #[test]
+    fn reuses_an_explicitly_configured_running_launcher() {
+        let executable = std::env::current_exe().expect("current executable should exist");
+        let process_name = executable
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("current executable should have a file name");
+
+        assert!(is_launcher_running("", process_name));
+    }
+
+    #[test]
+    fn discovers_a_persistent_launcher_below_a_bootstrap_target() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("resolution-hub-launcher-{suffix}"));
+        let launcher_dir = root.join("Launcher");
+        fs::create_dir_all(&launcher_dir).expect("temporary launcher directory should exist");
+        let target = root.join("aclos-launcher.exe");
+        fs::write(&target, []).expect("bootstrap fixture should exist");
+        fs::write(launcher_dir.join("无畏契约登录器.exe"), [])
+            .expect("persistent launcher fixture should exist");
+        fs::write(root.join("crashpad_handler.exe"), []).expect("helper fixture should exist");
+
+        let mut candidates = Vec::new();
+        launcher_process_candidates_from_target(&target, &mut candidates);
+
+        assert!(candidates.iter().any(|name| name == "aclos-launcher.exe"));
+        assert!(candidates.iter().any(|name| name == "无畏契约登录器.exe"));
+        assert!(!candidates.iter().any(|name| name == "crashpad_handler.exe"));
+        fs::remove_dir_all(root).expect("temporary launcher directory should be removable");
     }
 }

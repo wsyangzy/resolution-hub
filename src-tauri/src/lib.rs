@@ -132,7 +132,7 @@ async fn get_application_icon(request: ApplicationIconRequest) -> Option<Applica
 }
 
 #[tauri::command]
-fn open_launch_source(request: DetectLaunchRequest) -> Result<(), String> {
+fn open_launch_source(request: DetectLaunchRequest) -> Result<bool, String> {
     launcher::launch_request(&request)
 }
 

@@ -63,6 +63,7 @@ export interface GameProfile {
   steamAppId: string;
   shortcutPath: string;
   launcherProvider: string;
+  launcherProcessName: string;
   processName: string;
   switchTiming: SwitchTiming | null;
   launchTimeoutSec: number;
@@ -94,6 +95,7 @@ export interface DetectLaunchRequest {
   workingDirectory: string;
   steamAppId: string;
   shortcutPath: string;
+  launcherProcessName: string;
   launchBeforeDetect: boolean;
 }
 

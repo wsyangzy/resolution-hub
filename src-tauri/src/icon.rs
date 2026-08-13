@@ -118,12 +118,38 @@ fn resolve_lnk_icon_candidates(path: &Path) -> Vec<(PathBuf, i32)> {
     }
 }
 
-fn resolve_lnk_icon_candidates_inner(path: &Path) -> Option<Vec<(PathBuf, i32)>> {
+pub(crate) fn shortcut_target(path: &Path) -> Option<PathBuf> {
+    unsafe {
+        let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok();
+        let result =
+            load_shell_link(path).and_then(|shell_link| shortcut_target_from_link(&shell_link));
+        if initialized {
+            CoUninitialize();
+        }
+        result
+    }
+}
+
+fn load_shell_link(path: &Path) -> Option<IShellLinkW> {
     let shell_link: IShellLinkW =
         unsafe { CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER) }.ok()?;
     let persist_file: IPersistFile = shell_link.cast().ok()?;
     let wide_path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
     unsafe { persist_file.Load(PCWSTR(wide_path.as_ptr()), STGM_READ) }.ok()?;
+    Some(shell_link)
+}
+
+fn shortcut_target_from_link(shell_link: &IShellLinkW) -> Option<PathBuf> {
+    let mut target = vec![0u16; MAX_PATH as usize];
+    unsafe { shell_link.GetPath(&mut target, std::ptr::null_mut(), SLGP_UNCPRIORITY.0 as u32) }
+        .ok()?;
+    string_from_wide_buffer(&target)
+        .map(PathBuf::from)
+        .filter(|target| target.is_file())
+}
+
+fn resolve_lnk_icon_candidates_inner(path: &Path) -> Option<Vec<(PathBuf, i32)>> {
+    let shell_link = load_shell_link(path)?;
 
     let mut candidates = Vec::new();
     let mut icon_path = vec![0u16; MAX_PATH as usize];
@@ -136,13 +162,7 @@ fn resolve_lnk_icon_candidates_inner(path: &Path) -> Option<Vec<(PathBuf, i32)>>
         candidates.push((icon_path, icon_index));
     }
 
-    let mut target = vec![0u16; MAX_PATH as usize];
-    if unsafe { shell_link.GetPath(&mut target, std::ptr::null_mut(), SLGP_UNCPRIORITY.0 as u32) }
-        .is_ok()
-        && let Some(target) = string_from_wide_buffer(&target)
-            .map(PathBuf::from)
-            .filter(|target| target.is_file())
-    {
+    if let Some(target) = shortcut_target_from_link(&shell_link) {
         candidates.push((target, 0));
     }
 

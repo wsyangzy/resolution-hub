@@ -148,6 +148,8 @@ pub struct GameProfile {
     pub shortcut_path: String,
     #[serde(default)]
     pub launcher_provider: String,
+    #[serde(default)]
+    pub launcher_process_name: String,
     pub process_name: String,
     #[serde(default)]
     pub switch_timing: Option<SwitchTiming>,
@@ -219,6 +221,8 @@ pub struct DetectLaunchRequest {
     pub steam_app_id: String,
     #[serde(default)]
     pub shortcut_path: String,
+    #[serde(default)]
+    pub launcher_process_name: String,
     #[serde(default = "default_true")]
     pub launch_before_detect: bool,
 }
@@ -289,8 +293,35 @@ mod tests {
             Some(SwitchTiming::OnProcessDetected)
         ));
         assert_eq!(profile.launch_timeout_sec, 600);
+        assert!(profile.launcher_process_name.is_empty());
     }
 
+    #[test]
+    fn old_launcher_profile_keeps_the_optional_process_empty() {
+        let mut profile: GameProfile = serde_json::from_str(
+            r#"{
+                "id":"1",
+                "name":"VALORANT",
+                "launchType":"shortcut",
+                "executable":"",
+                "arguments":"",
+                "steamAppId":"",
+                "shortcutPath":"C:\\VALORANT.lnk",
+                "launcherProvider":"Riot Client",
+                "processName":"VALORANT-Win64-Shipping.exe",
+                "displayDevice":"DISPLAY1",
+                "width":1920,
+                "height":1080,
+                "refreshRate":144,
+                "restoreDelayMs":2000
+            }"#,
+        )
+        .unwrap();
+
+        profile.normalize();
+
+        assert!(profile.launcher_process_name.is_empty());
+    }
     #[test]
     fn old_settings_keep_close_behavior_compatibility() {
         let unconfigured: AppSettings =
