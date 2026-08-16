@@ -266,4 +266,12 @@ describe("window size persistence", () => {
       .toEqual({ width: 980, height: 720 });
     release();
   });
+
+  it("uses the project homepage Tauri command", async () => {
+    invokeMock.mockResolvedValue(undefined);
+
+    await tauriApi.openProjectHomepage();
+
+    expect(invokeMock).toHaveBeenCalledWith("open_project_homepage");
+  });
 });

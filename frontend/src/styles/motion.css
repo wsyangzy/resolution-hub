@@ -46,6 +46,11 @@
   --page-slide-ease: var(--ease-smooth-out);
   --page-fade-ease: var(--ease-smooth-out);
 
+  --view-enter-dur: var(--duration-fast);
+  --view-enter-ease: var(--ease-smooth-out);
+  --view-enter-scale: 0.985;
+  --view-enter-y: 6px;
+
   --pulse-dur: 1000ms;
   --pulse-count: 1;
   --pulse-min: 0.5;
@@ -434,4 +439,25 @@
 
 @media (prefers-reduced-motion: reduce) {
   .t-toggle-thumb { animation: none !important; }
+}
+
+/* 工作区与游戏专注页互相切换。两个方向都是整块重新挂载，各自播放一次
+   进入动画即可，不需要为了退场把已卸载的视图留在树里。 */
+.t-view-enter {
+  animation: t-view-enter var(--view-enter-dur) var(--view-enter-ease) both;
+}
+
+@keyframes t-view-enter {
+  from {
+    opacity: 0;
+    transform: scale(var(--view-enter-scale)) translateY(var(--view-enter-y));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-view-enter { animation: none !important; }
 }

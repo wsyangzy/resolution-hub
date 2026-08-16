@@ -30,6 +30,7 @@ const CANCELLABLE_SLEEP_SLICE: Duration = Duration::from_millis(100);
 pub struct RuntimeManager {
     status: Arc<Mutex<RuntimeStatus>>,
     generation: Arc<AtomicU64>,
+    automatic_generation: Arc<AtomicU64>,
     display_operation: Arc<Mutex<()>>,
 }
 
@@ -45,6 +46,7 @@ impl Default for RuntimeManager {
                 can_cancel: false,
             })),
             generation: Arc::new(AtomicU64::new(0)),
+            automatic_generation: Arc::new(AtomicU64::new(0)),
             display_operation: Arc::new(Mutex::new(())),
         }
     }
@@ -78,6 +80,7 @@ impl RuntimeManager {
                 return Err("检测到尚未恢复的桌面显示模式，请先点击立即恢复".to_string());
             }
             let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+            self.automatic_generation.store(0, Ordering::SeqCst);
             *status = RuntimeStatus {
                 phase: "preparing".to_string(),
                 profile_id: Some(profile.id.clone()),
@@ -88,6 +91,8 @@ impl RuntimeManager {
             };
             generation
         };
+        let _ = profile::record_launch(&profile.id);
+        crate::tray::refresh_games(&app);
         self.emit(&app);
 
         let manager = self.clone();
@@ -99,8 +104,231 @@ impl RuntimeManager {
         Ok(())
     }
 
+    pub fn start_automatic(
+        &self,
+        game: &GameProfile,
+        pid: u32,
+        app: &AppHandle,
+    ) -> Result<bool, String> {
+        if !process::is_pid_running(pid) {
+            return Ok(false);
+        }
+        let generation = {
+            let mut status = self
+                .status
+                .lock()
+                .map_err(|_| "无法锁定运行状态".to_string())?;
+            if !matches!(status.phase.as_str(), "idle" | "error") {
+                return Ok(false);
+            }
+            if profile::load_pending()?.is_some() {
+                return Ok(false);
+            }
+            let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+            self.automatic_generation
+                .store(generation, Ordering::SeqCst);
+            *status = RuntimeStatus {
+                phase: "switching".to_string(),
+                profile_id: Some(game.id.clone()),
+                profile_name: Some(game.name.clone()),
+                message: format!("检测到 {}，正在自动接管显示模式", game.name),
+                can_restore: false,
+                can_cancel: false,
+            };
+            generation
+        };
+        self.emit(app);
+
+        if let Err(error) = self.switch_to_target(game, generation) {
+            self.handle_automatic_error(error.clone(), generation, app);
+            return Err(error);
+        }
+        if !self.is_automatic_generation(generation) {
+            return Ok(false);
+        }
+        self.set_status(
+            generation,
+            RuntimeStatus {
+                phase: "running".to_string(),
+                profile_id: Some(game.id.clone()),
+                profile_name: Some(game.name.clone()),
+                message: format!("已自动接管 {}，退出后将恢复桌面", game.name),
+                can_restore: true,
+                can_cancel: false,
+            },
+            app,
+        );
+        Ok(true)
+    }
+
+    pub fn switch_automatic(
+        &self,
+        game: &GameProfile,
+        pid: u32,
+        app: &AppHandle,
+    ) -> Result<bool, String> {
+        if !process::is_pid_running(pid) {
+            return Ok(false);
+        }
+        let generation = self.automatic_generation.load(Ordering::SeqCst);
+        if !self.is_automatic_generation(generation) {
+            return Ok(false);
+        }
+        self.set_status(
+            generation,
+            RuntimeStatus {
+                phase: "switching".to_string(),
+                profile_id: Some(game.id.clone()),
+                profile_name: Some(game.name.clone()),
+                message: format!("正在将自动接管切换到 {}", game.name),
+                can_restore: true,
+                can_cancel: false,
+            },
+            app,
+        );
+
+        if let Err(error) = self.apply_target(game, generation) {
+            self.handle_automatic_error(error.clone(), generation, app);
+            return Err(error);
+        }
+        if !self.is_automatic_generation(generation) {
+            return Ok(false);
+        }
+        self.set_status(
+            generation,
+            RuntimeStatus {
+                phase: "running".to_string(),
+                profile_id: Some(game.id.clone()),
+                profile_name: Some(game.name.clone()),
+                message: format!("已自动接管 {}，退出后将恢复桌面", game.name),
+                can_restore: true,
+                can_cancel: false,
+            },
+            app,
+        );
+        Ok(true)
+    }
+
+    pub fn ensure_automatic_target(
+        &self,
+        game: &GameProfile,
+        app: &AppHandle,
+    ) -> Result<bool, String> {
+        let generation = self.automatic_generation.load(Ordering::SeqCst);
+        if !self.is_automatic_generation(generation) {
+            return Ok(false);
+        }
+        let target = target_mode(game);
+        if verify_display_mode(&target).is_ok() {
+            return Ok(true);
+        }
+        self.set_status(
+            generation,
+            RuntimeStatus {
+                phase: "switching".to_string(),
+                profile_id: Some(game.id.clone()),
+                profile_name: Some(game.name.clone()),
+                message: "游戏覆盖了显示模式，正在重新应用".to_string(),
+                can_restore: true,
+                can_cancel: false,
+            },
+            app,
+        );
+        if let Err(error) = self.apply_target(game, generation) {
+            self.handle_automatic_error(error.clone(), generation, app);
+            return Err(error);
+        }
+        self.set_status(
+            generation,
+            RuntimeStatus {
+                phase: "running".to_string(),
+                profile_id: Some(game.id.clone()),
+                profile_name: Some(game.name.clone()),
+                message: format!("已自动接管 {}，退出后将恢复桌面", game.name),
+                can_restore: true,
+                can_cancel: false,
+            },
+            app,
+        );
+        Ok(self.is_automatic_generation(generation))
+    }
+
+    pub fn finish_automatic(&self, restore_delay_ms: u64, app: &AppHandle) -> Result<(), String> {
+        let generation = self.automatic_generation.load(Ordering::SeqCst);
+        if !self.is_automatic_generation(generation) {
+            return Ok(());
+        }
+        let current = self.status();
+        self.set_status(
+            generation,
+            RuntimeStatus {
+                phase: "restoring".to_string(),
+                profile_id: current.profile_id,
+                profile_name: current.profile_name,
+                message: "自动监控到游戏已退出，正在恢复桌面".to_string(),
+                can_restore: true,
+                can_cancel: false,
+            },
+            app,
+        );
+        if !self.sleep_while_current(
+            generation,
+            Duration::from_millis(restore_delay_ms.clamp(0, 30_000)),
+        ) || !self.is_automatic_generation(generation)
+        {
+            return Ok(());
+        }
+
+        if let Err(error) = self.restore_pending_serialized() {
+            let _ = self.automatic_generation.compare_exchange(
+                generation,
+                0,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            );
+            self.set_status(
+                generation,
+                RuntimeStatus {
+                    phase: "error".to_string(),
+                    profile_id: None,
+                    profile_name: None,
+                    message: format!("自动恢复桌面显示模式失败：{error}"),
+                    can_restore: true,
+                    can_cancel: false,
+                },
+                app,
+            );
+            return Err(error);
+        }
+        let _ = self.automatic_generation.compare_exchange(
+            generation,
+            0,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
+        self.set_status(
+            generation,
+            RuntimeStatus {
+                phase: "idle".to_string(),
+                profile_id: None,
+                profile_name: None,
+                message: "外部游戏已退出，桌面显示模式已恢复".to_string(),
+                can_restore: false,
+                can_cancel: false,
+            },
+            app,
+        );
+        Ok(())
+    }
+
+    pub fn automatic_active(&self) -> bool {
+        let generation = self.automatic_generation.load(Ordering::SeqCst);
+        self.is_automatic_generation(generation)
+    }
+
     pub fn restore_now(&self, app: &AppHandle) -> Result<(), String> {
         self.generation.fetch_add(1, Ordering::SeqCst);
+        self.automatic_generation.store(0, Ordering::SeqCst);
         self.set_status_unchecked(
             RuntimeStatus {
                 phase: "restoring".to_string(),
@@ -305,7 +533,7 @@ impl RuntimeManager {
                 PROCESS_HANDOFF_GRACE_PERIOD,
             );
         }
-        while use_polling_fallback && process::is_running(&game.process_name) {
+        while use_polling_fallback && process::is_running(&game.process_name) != Some(false) {
             if !self.sleep_while_current(generation, PROCESS_FALLBACK_INTERVAL) {
                 return Ok(());
             }
@@ -387,6 +615,19 @@ impl RuntimeManager {
         Ok(())
     }
 
+    fn apply_target(&self, game: &GameProfile, generation: u64) -> Result<(), String> {
+        let _display_operation = self
+            .display_operation
+            .lock()
+            .map_err(|_| "显示操作锁已损坏".to_string())?;
+        if !self.is_current(generation) {
+            return Ok(());
+        }
+        let target = target_mode(game);
+        switch_mode_verified(&target, || self.is_current(generation))?;
+        Ok(())
+    }
+
     fn stabilize_target_mode(
         &self,
         game: &GameProfile,
@@ -405,7 +646,7 @@ impl RuntimeManager {
             if !self.sleep_while_current(generation, GAME_DISPLAY_STABILIZATION_INTERVAL) {
                 return Ok(false);
             }
-            if !process::is_running(&game.process_name) {
+            if process::is_running(&game.process_name) == Some(false) {
                 return Ok(true);
             }
             if verify_display_mode(&target).is_err() {
@@ -476,8 +717,27 @@ impl RuntimeManager {
         );
     }
 
+    fn handle_automatic_error(&self, error: String, generation: u64, app: &AppHandle) {
+        if !self.is_automatic_generation(generation) {
+            return;
+        }
+        let _ = self.automatic_generation.compare_exchange(
+            generation,
+            0,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
+        self.handle_session_error(format!("自动接管失败：{error}"), generation, app);
+    }
+
     fn is_current(&self, generation: u64) -> bool {
         self.generation.load(Ordering::SeqCst) == generation
+    }
+
+    fn is_automatic_generation(&self, generation: u64) -> bool {
+        generation != 0
+            && self.is_current(generation)
+            && self.automatic_generation.load(Ordering::SeqCst) == generation
     }
 
     fn sleep_while_current(&self, generation: u64, duration: Duration) -> bool {
@@ -547,11 +807,24 @@ impl RuntimeManager {
         if let Ok(mut current) = self.status.lock() {
             *current = status.clone();
         }
+        crate::tray::update_status(app, &status);
         let _ = app.emit("runtime-status", status);
     }
 
     fn emit(&self, app: &AppHandle) {
-        let _ = app.emit("runtime-status", self.status());
+        let status = self.status();
+        crate::tray::update_status(app, &status);
+        let _ = app.emit("runtime-status", status);
+    }
+}
+
+fn target_mode(game: &GameProfile) -> DisplayMode {
+    DisplayMode {
+        device_name: game.display_device.clone(),
+        width: game.width,
+        height: game.height,
+        refresh_rate: game.refresh_rate,
+        bits_per_pixel: 32,
     }
 }
 

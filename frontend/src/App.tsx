@@ -25,6 +25,7 @@ import {
 import { DisplaysPage } from "./components/DisplaysPage";
 import { GameLibrary } from "./components/GameLibrary";
 import { ProfileEditor } from "./components/ProfileEditor";
+import { RunningPage } from "./components/RunningPage";
 import { SettingsPage } from "./components/SettingsPage";
 import {
   type ConfirmOptions,
@@ -108,6 +109,7 @@ const INITIAL_STATE: AppState = {
     minimizeBehavior: "taskbar",
     closeBehavior: "hideToTray",
     confirmCloseBehavior: true,
+    autoSwitchEnabled: false,
   },
   runtime: IDLE_RUNTIME,
   pendingRestore: null,
@@ -162,16 +164,18 @@ interface SidebarItemProps {
   label: string;
   active: boolean;
   icon: ReactNode;
+  disabled?: boolean;
   onClick: () => void;
 }
 
-function SidebarItem({ label, active, icon, onClick }: SidebarItemProps) {
+function SidebarItem({ label, active, icon, disabled = false, onClick }: SidebarItemProps) {
   return (
     <button
       type="button"
       className={`sidebar-item${active ? " is-active" : ""}`}
       aria-label={label}
       aria-current={active ? "page" : undefined}
+      disabled={disabled}
       onClick={onClick}
     >
       <span className="sidebar-item-icon" aria-hidden="true">{icon}</span>
@@ -273,7 +277,13 @@ export default function App() {
           || runtime.phase === "error"
         );
         if (shouldNormalizeWindow) {
-          void tauriApi.ensureWindowSize().catch(() => undefined).finally(() => {
+          // 回到 idle/error 说明刚做完一次显示模式恢复，必须等工作区尺寸稳定后
+          // 再归一化，否则窗口会被按旧分辨率夹小并把错误尺寸持久化下来。
+          const settled = runtime.phase === "idle" || runtime.phase === "error";
+          const normalize = settled
+            ? tauriApi.settleWindowSizeAfterDisplayChange()
+            : tauriApi.ensureWindowSize();
+          void normalize.catch(() => undefined).finally(() => {
             if (
               mounted
               && normalizationId === windowSizeNormalizationId
@@ -360,8 +370,14 @@ export default function App() {
 
   const runtimeBusy = state.runtime.phase !== "idle" && state.runtime.phase !== "error";
   const canRestore = state.runtime.canRestore || state.pendingRestore !== null;
-  const shouldRestoreBeforeExit = runtimeBusy || canRestore;
   const statusMode = useMemo(() => defaultModeLabel(state), [state.displays, state.settings]);
+  // 接管期间锁定在专注页，navigate 用 ref 读取避免把自身绑进依赖链。
+  const runtimeBusyRef = useRef(runtimeBusy);
+  runtimeBusyRef.current = runtimeBusy;
+  const runningProfile = useMemo(
+    () => state.profiles.find((item) => item.id === state.runtime.profileId) ?? null,
+    [state.profiles, state.runtime.profileId],
+  );
 
   const leaveEditor = useCallback((afterLeave: () => void) => {
     if (!editorOpen) {
@@ -389,6 +405,9 @@ export default function App() {
   }, [editorDirty, editorOpen, openConfirm]);
 
   const navigate = useCallback((next: Workspace) => {
+    if (runtimeBusyRef.current) {
+      return;
+    }
     leaveEditor(() => setWorkspace(next));
   }, [leaveEditor]);
 
@@ -450,14 +469,12 @@ export default function App() {
   }, [showError]);
 
   const exitNow = useCallback(async () => {
-    if (shouldRestoreBeforeExit) {
-      await restoreDesktop();
-    }
+    tauriApi.setWindowSizePersistenceSuspended(true);
     await tauriApi.close();
     if (editorDirty) {
       setEditorDirty(false);
     }
-  }, [editorDirty, restoreDesktop, shouldRestoreBeforeExit]);
+  }, [editorDirty]);
 
   const requestExit = useCallback(() => {
     if (!canRestore && !editorDirty) {
@@ -581,7 +598,10 @@ export default function App() {
 
     attach(tauriApi.listenWindowCloseRequested(() => closeWindowRef.current()));
     attach(tauriApi.listenTrayExitRequested(() => requestExitRef.current()));
-
+    attach(tauriApi.listenTrayActionError(showError));
+    attach(tauriApi.listenSettingsChanged((settings) => {
+      dispatch({ type: "settings", value: settings });
+    }));
     return () => {
       active = false;
       releases.forEach((release) => release());
@@ -600,10 +620,27 @@ export default function App() {
     }
   }, [state.autoStartEnabled]);
 
-  const pageTitle = editorOpen
-    ? editingProfile ? "编辑游戏" : "添加游戏"
-    : workspace === "library" ? "游戏库"
-      : workspace === "displays" ? "显示设置" : "应用设置";
+  const updateAutoSwitch = useCallback(async (enabled: boolean) => {
+    const previous = state.settings;
+    dispatch({
+      type: "settings",
+      value: { ...previous, autoSwitchEnabled: enabled },
+    });
+    try {
+      const saved = await tauriApi.setAutoSwitchEnabled(enabled);
+      dispatch({ type: "settings", value: saved });
+    } catch (error) {
+      dispatch({ type: "settings", value: previous });
+      throw error;
+    }
+  }, [state.settings]);
+
+  const pageTitle = runtimeBusy
+    ? state.runtime.profileName ?? "游戏运行中"
+    : editorOpen
+      ? editingProfile ? "编辑游戏" : "添加游戏"
+      : workspace === "library" ? "游戏库"
+        : workspace === "displays" ? "显示设置" : "应用设置";
 
   return (
     <div className={`app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
@@ -620,18 +657,21 @@ export default function App() {
             label="游戏库"
             active={workspace === "library"}
             icon={<Gamepad2 size={19} />}
+            disabled={runtimeBusy}
             onClick={() => navigate("library")}
           />
           <SidebarItem
             label="显示设置"
             active={workspace === "displays"}
             icon={<MonitorCog size={19} />}
+            disabled={runtimeBusy}
             onClick={() => navigate("displays")}
           />
           <SidebarItem
             label="应用设置"
             active={workspace === "settings"}
             icon={<Settings size={19} />}
+            disabled={runtimeBusy}
             onClick={() => navigate("settings")}
           />
         </nav>
@@ -668,17 +708,33 @@ export default function App() {
       </header>
 
       <main className="workspace-main">
-        {workspace === "library" ? (
-          <div className="library-pages t-page-slide" data-page={editorOpen ? "2" : "1"}>
+        {runtimeBusy ? (
+          <div className="page-scroll t-view-enter" key="running">
+            <RunningPage
+              runtime={state.runtime}
+              profile={runningProfile}
+              onCancel={() => void cancelWait()}
+              onRestore={requestRestore}
+            />
+          </div>
+        ) : workspace === "library" ? (
+          <div
+            className="library-pages t-page-slide t-view-enter"
+            key="library"
+            data-page={editorOpen ? "2" : "1"}
+          >
             <div className="t-page page-scroll" data-page-id="1" aria-hidden={editorOpen}>
               <GameLibrary
                 profiles={state.profiles}
                 runtime={state.runtime}
                 loading={state.loading}
+                autoSwitchEnabled={state.settings.autoSwitchEnabled}
                 onAdd={() => openEditor(null)}
                 onEdit={(profile) => openEditor(profile)}
                 onDelete={deleteProfile}
                 onLaunch={(profile) => void launchProfile(profile)}
+                onAutoSwitchChange={updateAutoSwitch}
+                onAutoSwitchError={showError}
               />
             </div>
             <div className="t-page page-scroll" data-page-id="2" aria-hidden={!editorOpen}>
@@ -697,7 +753,7 @@ export default function App() {
             </div>
           </div>
         ) : workspace === "displays" ? (
-          <div className="page-scroll">
+          <div className="page-scroll t-view-enter" key="displays">
             <DisplaysPage
               displays={state.displays}
               settings={state.settings}
@@ -709,14 +765,17 @@ export default function App() {
             />
           </div>
         ) : (
-          <div className="page-scroll">
+          <div className="page-scroll t-view-enter" key="settings">
             <SettingsPage
               autoStartEnabled={state.autoStartEnabled}
+              autoSwitchEnabled={state.settings.autoSwitchEnabled}
               minimizeBehavior={state.settings.minimizeBehavior}
               closeBehavior={state.settings.closeBehavior}
               confirmCloseBehavior={state.settings.confirmCloseBehavior}
               version={state.version}
               onAutoStartChange={updateAutoStart}
+              onAutoSwitchChange={updateAutoSwitch}
+              onOpenProjectHomepage={tauriApi.openProjectHomepage}
               onWindowPreferencesChange={saveWindowPreferences}
               onToast={showToast}
             />
@@ -731,12 +790,8 @@ export default function App() {
           <strong data-tooltip-overflow={`桌面默认模式：${statusMode}`}>{statusMode}</strong>
         </div>
         <div className="safety-actions">
-          {state.runtime.canCancel && (
-            <button type="button" className="button button-quiet compact" onClick={() => void cancelWait()}>
-              取消等待
-            </button>
-          )}
-          {canRestore && (
+          {/* 接管期间这些操作由专注页承担；此处只保留 idle 状态下残留恢复点的入口。 */}
+          {!runtimeBusy && canRestore && (
             <button type="button" className="button button-warning compact" onClick={requestRestore}>
               <RotateCcw size={14} aria-hidden="true" />
               立即恢复

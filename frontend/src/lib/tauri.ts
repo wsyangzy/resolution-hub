@@ -28,6 +28,8 @@ const WINDOW_FRAME_TOLERANCE = 32;
 const MIN_STORED_WINDOW_WIDTH = MIN_WINDOW_WIDTH - WINDOW_FRAME_TOLERANCE;
 const MIN_STORED_WINDOW_HEIGHT = MIN_WINDOW_HEIGHT - WINDOW_FRAME_TOLERANCE;
 const MAX_WINDOW_DIMENSION = 10_000;
+const WORK_AREA_SETTLE_ATTEMPTS = 8;
+const WORK_AREA_SETTLE_INTERVAL_MS = 120;
 
 interface StoredWindowSize {
   width: number;
@@ -164,7 +166,35 @@ async function getLogicalWorkAreaLimit(): Promise<StoredWindowSize | null> {
   }
 }
 
-async function ensureWindowSize(appWindow: AppWindow = getCurrentWindow()) {
+/// 显示模式切换后 Windows 需要一小段时间才会广播新的工作区尺寸。在它稳定之前
+/// 归一化窗口，会把窗口按旧分辨率的工作区夹小，随后解除持久化暂停时又把这个
+/// 错误尺寸写进 localStorage，导致恢复桌面分辨率后布局再也回不到原状。
+async function waitForStableWorkArea() {
+  let previous: StoredWindowSize | null = null;
+  for (let attempt = 0; attempt < WORK_AREA_SETTLE_ATTEMPTS; attempt += 1) {
+    const current = await getLogicalWorkAreaLimit();
+    if (
+      current
+      && previous
+      && current.width === previous.width
+      && current.height === previous.height
+    ) {
+      return;
+    }
+    previous = current;
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, WORK_AREA_SETTLE_INTERVAL_MS);
+    });
+  }
+}
+
+async function ensureWindowSize(
+  appWindow: AppWindow = getCurrentWindow(),
+  options: { settleDisplay?: boolean } = {},
+) {
+  if (options.settleDisplay) {
+    await waitForStableWorkArea();
+  }
   const workAreaLimit = await getLogicalWorkAreaLimit();
   const minimumWidth = workAreaLimit
     ? Math.min(MIN_WINDOW_WIDTH, workAreaLimit.width)
@@ -258,6 +288,8 @@ export const tauriApi = {
     };
   },
   ensureWindowSize,
+  settleWindowSizeAfterDisplayChange: () =>
+    ensureWindowSize(getCurrentWindow(), { settleDisplay: true }),
   setWindowSizePersistenceSuspended,
   enumerateDisplays: () => invoke<DisplayInfo[]>("enumerate_displays"),
   enumerateDisplayModes: (deviceName: string) =>
@@ -282,6 +314,9 @@ export const tauriApi = {
     confirmCloseBehavior,
     minimizeBehavior,
   }),
+  setAutoSwitchEnabled: (enabled: boolean) =>
+    invoke<AppSettings>("set_auto_switch_enabled", { enabled }),
+  openProjectHomepage: () => invoke<void>("open_project_homepage"),
   getAutoStartEnabled: () => invoke<boolean>("get_auto_start_enabled"),
   setAutoStartEnabled: (enabled: boolean) =>
     invoke<boolean>("set_auto_start_enabled", { enabled }),
@@ -323,4 +358,8 @@ export const tauriApi = {
     listen<void>("window-close-requested", handler),
   listenTrayExitRequested: (handler: () => void) =>
     listen<void>("tray-exit-requested", handler),
+  listenTrayActionError: (handler: (message: string) => void) =>
+    listen<string>("tray-action-error", ({ payload }) => handler(payload)),
+  listenSettingsChanged: (handler: (settings: AppSettings) => void) =>
+    listen<AppSettings>("settings-changed", ({ payload }) => handler(payload)),
 };

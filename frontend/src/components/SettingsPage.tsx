@@ -1,9 +1,11 @@
 import {
+  ExternalLink,
   Info,
   Moon,
   MonitorCog,
   PanelTopClose,
   Power,
+  Radar,
   ShieldCheck,
   Sun,
 } from "lucide-react";
@@ -17,11 +19,14 @@ export type ThemePreference = "light" | "dark";
 
 export interface SettingsPageProps {
   autoStartEnabled: boolean;
+  autoSwitchEnabled: boolean;
   minimizeBehavior: MinimizeBehavior;
   closeBehavior: CloseBehavior;
   confirmCloseBehavior: boolean;
   version: string;
   onAutoStartChange: (enabled: boolean) => Promise<void> | void;
+  onAutoSwitchChange: (enabled: boolean) => Promise<void> | void;
+  onOpenProjectHomepage: () => Promise<void> | void;
   onWindowPreferencesChange: (
     minimizeBehavior: MinimizeBehavior,
     behavior: CloseBehavior,
@@ -59,16 +64,20 @@ function errorMessage(error: unknown, fallback: string): string {
 
 export function SettingsPage({
   autoStartEnabled,
+  autoSwitchEnabled,
   minimizeBehavior,
   closeBehavior,
   confirmCloseBehavior,
   version,
   onAutoStartChange,
+  onAutoSwitchChange,
+  onOpenProjectHomepage,
   onWindowPreferencesChange,
   onToast,
 }: SettingsPageProps) {
   const [theme, setTheme] = useState<ThemePreference>(currentTheme);
   const [autoStartSaving, setAutoStartSaving] = useState(false);
+  const [autoSwitchSaving, setAutoSwitchSaving] = useState(false);
   const [windowSettingSaving, setWindowSettingSaving] = useState<"minimize" | "close" | "prompt" | null>(null);
 
   useEffect(() => {
@@ -104,6 +113,33 @@ export function SettingsPage({
       );
     } finally {
       setAutoStartSaving(false);
+    }
+  };
+
+  const updateAutoSwitch = async (enabled: boolean) => {
+    if (autoSwitchSaving) {
+      return;
+    }
+
+    setAutoSwitchSaving(true);
+    try {
+      await onAutoSwitchChange(enabled);
+      onToast(
+        enabled ? "已启用外部游戏自动接管" : "已关闭外部游戏自动接管",
+        "success",
+      );
+    } catch (error) {
+      onToast(errorMessage(error, "更新自动接管设置失败"), "error");
+    } finally {
+      setAutoSwitchSaving(false);
+    }
+  };
+
+  const openProjectHomepage = async () => {
+    try {
+      await onOpenProjectHomepage();
+    } catch (error) {
+      onToast(errorMessage(error, "打开项目主页失败"), "error");
     }
   };
 
@@ -197,6 +233,37 @@ export function SettingsPage({
                 disabled={autoStartSaving}
                 onCheckedChange={(enabled) => void updateAutoStart(enabled)}
                 ariaLabel="Windows 开机自动启动"
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-section" aria-labelledby="auto-switch-title">
+          <header className="settings-section-header">
+            <span className="settings-section-icon" aria-hidden="true">
+              <Radar size={19} />
+            </span>
+            <div>
+              <h2 id="auto-switch-title">自动接管</h2>
+              <p>识别已配置的外部游戏进程并自动应用目标显示模式。</p>
+            </div>
+          </header>
+          <div className="setting-row auto-start-setting-row">
+            <div className="setting-copy">
+              <strong>自动接管外部启动的游戏</strong>
+              <span>
+                {autoSwitchEnabled
+                  ? "仅接管已配置且允许自动接管的游戏"
+                  : "只处理从 Resolution Hub 手动启动的游戏"}
+              </span>
+            </div>
+            <div className="setting-control-with-status">
+              {autoSwitchSaving && <span className="setting-saving">保存中</span>}
+              <MotionSwitch
+                checked={autoSwitchEnabled}
+                disabled={autoSwitchSaving}
+                onCheckedChange={(enabled) => void updateAutoSwitch(enabled)}
+                ariaLabel="自动接管外部启动的游戏"
               />
             </div>
           </div>
@@ -342,7 +409,19 @@ export function SettingsPage({
             <span className="version-tag">{version ? `v${version}` : "读取中..."}</span>
           </div>
 
+          <button
+            type="button"
+            className="button button-secondary project-homepage-button"
+            onClick={() => void openProjectHomepage()}
+          >
+            <ExternalLink size={16} aria-hidden="true" />
+            <span>GitHub 项目主页</span>
+          </button>
           <dl className="technical-information">
+            <div>
+              <dt>开发者</dt>
+              <dd>Juice &amp; Codex</dd>
+            </div>
             <div>
               <dt>界面</dt>
               <dd>React 19 · Vite 8 · TypeScript · Tailwind CSS 4</dd>

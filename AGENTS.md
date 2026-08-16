@@ -36,7 +36,8 @@ Resolution Hub 是 Windows 专用的游戏分辨率启动器。它在启动游�
 | 文件                     | 用途                   |
 | ------------------------ | ---------------------- |
 | `profiles.json`        | 游戏配置               |
-| `settings.json`        | 各显示器的桌面默认模式 |
+| `profile-usage.json`   | 托盘快捷启动使用记录   |
+| `settings.json`        | 显示器默认模式与全局偏好 |
 | `recent-apps.json`     | 最近活动应用历史       |
 | `pending-restore.json` | 显示模式异常恢复点     |
 

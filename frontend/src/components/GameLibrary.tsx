@@ -2,24 +2,22 @@ import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import {
   Activity,
   Cpu,
-  Gamepad2,
   LayoutGrid,
   LibraryBig,
-  Link2,
   List,
   Monitor,
   MoreHorizontal,
   Pencil,
   Play,
   Plus,
-  SquareTerminal,
+  Radar,
   Trash2,
 } from "lucide-react";
 import { useRef, useState } from "react";
 
 import type { GameProfile, RuntimePhase, RuntimeStatus } from "../types";
-import { AppIcon } from "./AppIcon";
-import { RuntimeText } from "./ui";
+import { AppIcon, profileIconFallback, profileIconSource } from "./AppIcon";
+import { MotionSwitch, RuntimeText } from "./ui";
 
 type LibraryLayout = "cards" | "list";
 const LIBRARY_LAYOUT_STORAGE_KEY = "resolution-hub-library-layout";
@@ -44,10 +42,13 @@ export interface GameLibraryProps {
   profiles: GameProfile[];
   runtime: RuntimeStatus;
   loading: boolean;
+  autoSwitchEnabled: boolean;
   onAdd: () => void;
   onEdit: (profile: GameProfile) => void;
   onDelete: (profile: GameProfile, returnFocus?: HTMLElement | null) => void;
   onLaunch: (profile: GameProfile) => void;
+  onAutoSwitchChange: (enabled: boolean) => Promise<void> | void;
+  onAutoSwitchError: (error: unknown) => void;
 }
 
 const RUNTIME_LABELS: Record<RuntimePhase, string> = {
@@ -98,25 +99,6 @@ export function formatProfileMode(profile: GameProfile): string {
 
 export function runtimePhaseLabel(phase: RuntimePhase): string {
   return RUNTIME_LABELS[phase];
-}
-
-function profileIconSource(profile: GameProfile) {
-  return {
-    steamAppId: profile.launchType === "steam" ? profile.steamAppId : "",
-    shortcutPath: profile.launchType === "shortcut" ? profile.shortcutPath : "",
-    executable: profile.launchType === "executable" ? profile.executable : "",
-    processName: profile.processName,
-  };
-}
-
-function profileIconFallback(profile: GameProfile) {
-  if (profile.launchType === "steam") {
-    return <Gamepad2 size={19} />;
-  }
-  if (profile.launchType === "shortcut") {
-    return <Link2 size={19} />;
-  }
-  return <SquareTerminal size={19} />;
 }
 
 function LibrarySkeleton() {
@@ -286,13 +268,17 @@ export function GameLibrary({
   profiles,
   runtime,
   loading,
+  autoSwitchEnabled,
   onAdd,
   onEdit,
   onDelete,
   onLaunch,
+  onAutoSwitchChange,
+  onAutoSwitchError,
 }: GameLibraryProps) {
   const busy = runtime.phase !== "idle" && runtime.phase !== "error";
   const [layout, setLayout] = useState<LibraryLayout>(initialLibraryLayout);
+  const [autoSwitchSaving, setAutoSwitchSaving] = useState(false);
   const layoutToggleLabel = layout === "cards" ? "切换为单行展示" : "切换为卡片展示";
 
   const toggleLayout = () => {
@@ -303,6 +289,20 @@ export function GameLibrary({
     });
   };
 
+  const updateAutoSwitch = async (enabled: boolean) => {
+    if (autoSwitchSaving) {
+      return;
+    }
+    setAutoSwitchSaving(true);
+    try {
+      await onAutoSwitchChange(enabled);
+    } catch (error) {
+      onAutoSwitchError(error);
+    } finally {
+      setAutoSwitchSaving(false);
+    }
+  };
+
   return (
     <section className="page game-library-page" aria-labelledby="game-library-title">
       <header className="page-header game-library-header">
@@ -311,6 +311,16 @@ export function GameLibrary({
           <p>共 {profiles.length} 个游戏配置</p>
         </div>
         <div className="game-library-actions">
+          <div className="library-auto-switch" data-enabled={autoSwitchEnabled}>
+            <Radar size={15} aria-hidden="true" />
+            <span>自动接管</span>
+            <MotionSwitch
+              checked={autoSwitchEnabled}
+              disabled={loading || autoSwitchSaving}
+              onCheckedChange={(enabled) => void updateAutoSwitch(enabled)}
+              ariaLabel="自动接管外部启动的游戏"
+            />
+          </div>
           {!loading && profiles.length > 0 && (
             <button
               type="button"

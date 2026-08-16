@@ -701,6 +701,41 @@ a svg {
   gap: 8px;
 }
 
+.library-auto-switch {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 9px;
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.library-auto-switch > span {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.library-auto-switch > svg {
+  color: var(--text-muted);
+}
+
+.library-auto-switch[data-enabled="true"] {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
+}
+
+.library-auto-switch[data-enabled="true"] > svg {
+  color: var(--success);
+}
+
+.library-auto-switch .t-toggle {
+  flex: 0 0 auto;
+}
+
 .library-layout-toggle {
   background: var(--surface-subtle);
 }
@@ -1210,12 +1245,14 @@ a svg {
   box-shadow: 0 0 0 3px var(--success-soft);
 }
 
-.runtime-state[data-phase="error"] .runtime-dot {
+.runtime-state[data-phase="error"] .runtime-dot,
+.running-state[data-phase="error"] .runtime-dot {
   background: var(--danger);
   box-shadow: 0 0 0 3px var(--danger-soft);
 }
 
-.runtime-state:not([data-phase="idle"]):not([data-phase="error"]) .runtime-dot {
+.runtime-state:not([data-phase="idle"]):not([data-phase="error"]) .runtime-dot,
+.running-state:not([data-phase="idle"]):not([data-phase="error"]) .runtime-dot {
   background: var(--info);
   box-shadow: 0 0 0 3px var(--info-soft);
 }
@@ -3175,6 +3212,14 @@ a svg {
   background: var(--primary-soft);
 }
 
+.project-homepage-button {
+  width: fit-content;
+  min-height: 32px;
+  margin: 0 0 13px 47px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
 .technical-information {
   display: grid;
   margin: 0 0 0 47px;
@@ -3211,6 +3256,95 @@ a svg {
 .technical-information dd svg {
   margin-right: 5px;
   color: var(--success);
+}
+
+/* 游戏运行专注页：接管期间替换整个工作区，信息密度刻意压到最低，
+   这样分辨率被切到低逻辑视口时也不需要额外的挤压适配。 */
+.running-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 100%;
+  padding: 24px;
+}
+
+.running-card {
+  display: flex;
+  width: min(420px, 100%);
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 28px;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-menu);
+  text-align: center;
+}
+
+/* 应用图标多为直角位图，容器不能带圆角，否则四角会被裁掉。
+   只有回退占位图标才需要底色和圆角。 */
+.running-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 0;
+  color: var(--text-secondary);
+}
+
+.running-avatar img {
+  max-width: 64px;
+  max-height: 64px;
+}
+
+.running-avatar .app-icon-fallback {
+  background: var(--surface-muted);
+  border-radius: 12px;
+}
+
+.running-title {
+  max-width: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.running-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.running-mode {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 7px 14px;
+  gap: 7px;
+  background: var(--surface-muted);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.running-mode svg {
+  color: var(--text-secondary);
+}
+
+.running-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+  gap: 10px;
 }
 
 @media (max-width: 880px) {
@@ -3323,6 +3457,66 @@ a svg {
     padding-left: 13px;
   }
 
+}
+
+/* 窄逻辑视口：分辨率切到低宽度时强制收起侧栏，并让底部状态栏可压缩，
+   避免侧栏、默认模式和状态文本互相挤压重叠。 */
+@media (max-width: 720px) {
+  .app-shell {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .app-shell .brand-copy,
+  .app-shell .sidebar-item-label,
+  .app-shell .sidebar-foot-copy {
+    display: none;
+  }
+
+  .app-shell .sidebar-item {
+    justify-content: center;
+  }
+
+  .safety-bar {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+}
+
+/* 矮逻辑视口：低分辨率或高 DPI 缩放都会让逻辑高度变小，
+   这里收紧三行栅格的固定行高与页面内边距，把空间让给内容。 */
+@media (max-height: 620px) {
+  .app-shell {
+    grid-template-rows: 40px minmax(0, 1fr) 42px;
+  }
+
+  .brand-block {
+    height: 52px;
+  }
+
+  .page {
+    padding-top: 16px;
+    padding-bottom: 20px;
+  }
+
+  .running-page {
+    padding: 14px;
+  }
+
+  .running-card {
+    padding: 20px 24px;
+    gap: 10px;
+  }
+
+  .running-avatar {
+    width: 52px;
+    height: 52px;
+  }
+
+  .running-title {
+    font-size: 18px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

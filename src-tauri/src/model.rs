@@ -49,6 +49,7 @@ pub struct AppSettings {
     pub minimize_behavior: MinimizeBehavior,
     pub close_behavior: CloseBehavior,
     pub confirm_close_behavior: bool,
+    pub auto_switch_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -58,6 +59,7 @@ impl Default for AppSettings {
             minimize_behavior: MinimizeBehavior::Taskbar,
             close_behavior: CloseBehavior::HideToTray,
             confirm_close_behavior: true,
+            auto_switch_enabled: false,
         }
     }
 }
@@ -73,6 +75,8 @@ struct StoredAppSettings {
     close_behavior: CloseBehavior,
     #[serde(default)]
     confirm_close_behavior: Option<bool>,
+    #[serde(default)]
+    auto_switch_enabled: bool,
 }
 
 impl<'de> Deserialize<'de> for AppSettings {
@@ -91,6 +95,7 @@ impl<'de> Deserialize<'de> for AppSettings {
                 stored.close_behavior
             },
             confirm_close_behavior: stored.confirm_close_behavior.unwrap_or(legacy_ask),
+            auto_switch_enabled: stored.auto_switch_enabled,
         })
     }
 }
@@ -151,6 +156,8 @@ pub struct GameProfile {
     #[serde(default)]
     pub launcher_process_name: String,
     pub process_name: String,
+    #[serde(default = "default_true")]
+    pub auto_switch: bool,
     #[serde(default)]
     pub switch_timing: Option<SwitchTiming>,
     #[serde(default = "default_launch_timeout_sec")]
@@ -294,6 +301,7 @@ mod tests {
         ));
         assert_eq!(profile.launch_timeout_sec, 600);
         assert!(profile.launcher_process_name.is_empty());
+        assert!(profile.auto_switch);
     }
 
     #[test]
@@ -329,19 +337,21 @@ mod tests {
         let configured: AppSettings =
             serde_json::from_str(r#"{"defaultDisplayModes":[],"closeBehavior":"exit"}"#).unwrap();
         let current: AppSettings = serde_json::from_str(
-            r#"{"defaultDisplayModes":[],"closeBehavior":"hideToTray","confirmCloseBehavior":true}"#,
+            r#"{"defaultDisplayModes":[],"closeBehavior":"hideToTray","confirmCloseBehavior":true,"autoSwitchEnabled":true}"#,
         )
         .unwrap();
 
         assert_eq!(unconfigured.close_behavior, CloseBehavior::HideToTray);
         assert_eq!(unconfigured.minimize_behavior, MinimizeBehavior::Taskbar);
         assert!(unconfigured.confirm_close_behavior);
+        assert!(!unconfigured.auto_switch_enabled);
         assert_eq!(configured.close_behavior, CloseBehavior::Exit);
         assert_eq!(configured.minimize_behavior, MinimizeBehavior::Taskbar);
         assert!(!configured.confirm_close_behavior);
         assert_eq!(current.close_behavior, CloseBehavior::HideToTray);
         assert_eq!(current.minimize_behavior, MinimizeBehavior::Taskbar);
         assert!(current.confirm_close_behavior);
+        assert!(current.auto_switch_enabled);
         assert_eq!(
             serde_json::to_string(&CloseBehavior::HideToTray).unwrap(),
             r#""hideToTray""#

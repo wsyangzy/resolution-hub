@@ -39,6 +39,7 @@ import { AppIcon } from "./AppIcon";
 import {
   Accordion,
   SelectControl,
+  MotionSwitch,
   SlidingTabs,
   Tooltip,
   type SelectOption,
@@ -68,6 +69,7 @@ interface DraftState {
   launcherProvider: string;
   launcherProcessName: string;
   processName: string;
+  autoSwitch: boolean;
   switchTiming: SwitchTiming;
   launchTimeoutMinutes: string;
   displayDevice: string;
@@ -154,6 +156,7 @@ function initialDraft(profile: GameProfile | null, displays: DisplayInfo[]): Dra
     launcherProvider: profile?.launcherProvider ?? "",
     launcherProcessName: profile?.launcherProcessName ?? "",
     processName: profile?.processName ?? "",
+    autoSwitch: profile?.autoSwitch ?? true,
     switchTiming: profile?.switchTiming
       ?? (launchType === "executable" ? "beforeLaunch" : "onProcessDetected"),
     launchTimeoutMinutes: String((profile?.launchTimeoutSec ?? 600) / 60),
@@ -628,6 +631,7 @@ export function ProfileEditor({
         ? draft.launcherProcessName.trim()
         : "",
       processName: draft.processName.trim(),
+      autoSwitch: draft.autoSwitch,
       switchTiming: draft.switchTiming,
       launchTimeoutSec: Math.round(launchTimeoutMinutes * 60),
       displayDevice: draft.displayDevice,
@@ -1139,6 +1143,18 @@ export function ProfileEditor({
                 </label>
               </>
             )}
+
+            <div className="setting-row field-wide">
+              <div className="setting-copy">
+                <strong>允许自动接管</strong>
+                <span>全局自动接管开启时，检测到该游戏进程后应用目标显示模式</span>
+              </div>
+              <MotionSwitch
+                checked={draft.autoSwitch}
+                onCheckedChange={(enabled) => patch({ autoSwitch: enabled })}
+                ariaLabel="允许自动接管该游戏"
+              />
+            </div>
 
             <div className="field-grid field-wide">
               <label className="field" htmlFor="profile-switch-timing">

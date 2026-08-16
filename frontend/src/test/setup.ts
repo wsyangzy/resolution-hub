@@ -4,6 +4,16 @@ import { afterEach } from "vitest";
 
 afterEach(cleanup);
 
+class TestResizeObserver implements ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+if (!globalThis.ResizeObserver) {
+  Object.defineProperty(globalThis, "ResizeObserver", { value: TestResizeObserver });
+}
+
 Object.defineProperty(window, "matchMedia", {
   configurable: true,
   value: (query: string) => ({

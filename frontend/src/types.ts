@@ -36,6 +36,7 @@ export interface AppSettings {
   minimizeBehavior: MinimizeBehavior;
   closeBehavior: CloseBehavior;
   confirmCloseBehavior: boolean;
+  autoSwitchEnabled: boolean;
 }
 
 export interface ApplicationIconRequest {
@@ -65,6 +66,7 @@ export interface GameProfile {
   launcherProvider: string;
   launcherProcessName: string;
   processName: string;
+  autoSwitch: boolean;
   switchTiming: SwitchTiming | null;
   launchTimeoutSec: number;
   displayDevice: string;

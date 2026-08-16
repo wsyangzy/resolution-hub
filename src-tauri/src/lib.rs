@@ -1,3 +1,4 @@
+mod auto_monitor;
 mod autostart;
 mod detector;
 mod dialog;
@@ -10,6 +11,7 @@ mod profile;
 mod recent;
 mod runtime;
 mod steam;
+mod tray;
 
 use model::{
     AppSettings, ApplicationIcon, ApplicationIconRequest, CloseBehavior, DetectLaunchRequest,
@@ -17,11 +19,7 @@ use model::{
     RuntimeStatus, SteamGame,
 };
 use runtime::RuntimeManager;
-use tauri::{
-    Emitter, Manager, State,
-    menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-};
+use tauri::{Emitter, State};
 
 #[tauri::command]
 fn enumerate_displays() -> Result<Vec<DisplayInfo>, String> {
@@ -59,13 +57,7 @@ fn set_default_display_mode(
         .ok_or_else(|| "所选显示模式已不可用，请刷新后重试".to_string())?;
 
     display::switch_mode_persistent(&selected)?;
-    let current = display::current_mode(&selected.device_name)?;
-    if current.width != selected.width
-        || current.height != selected.height
-        || current.refresh_rate != selected.refresh_rate
-    {
-        return Err(format!("显示模式验证失败，当前为 {}", current.label()));
-    }
+    display::verify_persistent_mode(&selected)?;
     profile::save_default_display_mode(selected)
 }
 
@@ -79,6 +71,11 @@ fn set_close_behavior(
 }
 
 #[tauri::command]
+fn set_auto_switch_enabled(enabled: bool, app: tauri::AppHandle) -> Result<AppSettings, String> {
+    tray::set_auto_switch_enabled(&app, enabled)
+}
+
+#[tauri::command]
 fn get_auto_start_enabled() -> Result<bool, String> {
     autostart::is_enabled()
 }
@@ -89,18 +86,33 @@ fn set_auto_start_enabled(enabled: bool) -> Result<bool, String> {
 }
 
 #[tauri::command]
+fn open_project_homepage() -> Result<(), String> {
+    std::process::Command::new("explorer.exe")
+        .arg("https://github.com/bmmxat/resolution-hub")
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("无法打开项目主页：{error}"))
+}
+
+#[tauri::command]
 fn list_profiles() -> Result<Vec<GameProfile>, String> {
     profile::list()
 }
 
 #[tauri::command]
-fn save_profile(profile: GameProfile) -> Result<GameProfile, String> {
-    profile::save(profile)
+fn save_profile(profile: GameProfile, app: tauri::AppHandle) -> Result<GameProfile, String> {
+    let saved = profile::save(profile)?;
+    tray::refresh_games(&app);
+    auto_monitor::wake(&app);
+    Ok(saved)
 }
 
 #[tauri::command]
-fn delete_profile(id: String) -> Result<(), String> {
-    profile::delete(&id)
+fn delete_profile(id: String, app: tauri::AppHandle) -> Result<(), String> {
+    profile::delete(&id)?;
+    tray::refresh_games(&app);
+    auto_monitor::wake(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -210,62 +222,43 @@ fn win_hide(window: tauri::Window) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn win_close(app: tauri::AppHandle) {
-    app.exit(0);
-}
+async fn win_close(
+    app: tauri::AppHandle,
+    runtime: State<'_, RuntimeManager>,
+) -> Result<(), String> {
+    let manager = runtime.inner().clone();
+    let restore_app = app.clone();
+    let restore_result = tauri::async_runtime::spawn_blocking(move || {
+        auto_monitor::pause(&restore_app);
+        manager.restore_now(&restore_app)
+    })
+    .await;
 
-fn show_main_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+    match restore_result {
+        Ok(Ok(())) => {
+            auto_monitor::stop(&app);
+            app.exit(0);
+            Ok(())
+        }
+        Ok(Err(error)) => {
+            auto_monitor::resume(&app);
+            Err(error)
+        }
+        Err(error) => {
+            auto_monitor::resume(&app);
+            Err(format!("安全退出任务失败：{error}"))
+        }
     }
-}
-
-fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "tray-open", "打开 Resolution Hub", true, None::<&str>)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let exit = MenuItem::with_id(app, "tray-exit", "退出程序", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &separator, &exit])?;
-
-    let mut tray = TrayIconBuilder::with_id("resolution-hub")
-        .menu(&menu)
-        .tooltip("Resolution Hub")
-        .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "tray-open" => show_main_window(app),
-            "tray-exit" => {
-                show_main_window(app);
-                let _ = app.emit("tray-exit-requested", ());
-            }
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if matches!(
-                event,
-                TrayIconEvent::Click {
-                    button: MouseButton::Left,
-                    button_state: MouseButtonState::Up,
-                    ..
-                }
-            ) {
-                show_main_window(tray.app_handle());
-            }
-        });
-
-    if let Some(icon) = app.default_window_icon().cloned() {
-        tray = tray.icon(icon);
-    }
-    tray.build(app)?;
-    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(RuntimeManager::default())
+        .manage(auto_monitor::AutoMonitor::default())
         .setup(|app| {
-            setup_tray(app)?;
+            tray::setup(app)?;
+            auto_monitor::start(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -282,8 +275,10 @@ pub fn run() {
             get_settings,
             set_default_display_mode,
             set_close_behavior,
+            set_auto_switch_enabled,
             get_auto_start_enabled,
             set_auto_start_enabled,
+            open_project_homepage,
             list_profiles,
             save_profile,
             delete_profile,

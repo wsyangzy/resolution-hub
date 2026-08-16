@@ -1,8 +1,8 @@
-import { AppWindow } from "lucide-react";
+import { AppWindow, Gamepad2, Link2, SquareTerminal } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { tauriApi } from "../lib/tauri";
-import type { ApplicationIcon, ApplicationIconRequest } from "../types";
+import type { ApplicationIcon, ApplicationIconRequest, GameProfile } from "../types";
 
 const iconCache = new Map<string, Promise<string | null>>();
 
@@ -91,4 +91,23 @@ export function AppIcon({ source, className = "", fallback }: AppIconProps) {
         : <span className="app-icon-fallback">{fallback ?? <AppWindow size={18} />}</span>}
     </span>
   );
+}
+
+export function profileIconSource(profile: GameProfile): ApplicationIconRequest {
+  return {
+    steamAppId: profile.launchType === "steam" ? profile.steamAppId : "",
+    shortcutPath: profile.launchType === "shortcut" ? profile.shortcutPath : "",
+    executable: profile.launchType === "executable" ? profile.executable : "",
+    processName: profile.processName,
+  };
+}
+
+export function profileIconFallback(profile: GameProfile, size = 19): ReactNode {
+  if (profile.launchType === "steam") {
+    return <Gamepad2 size={size} />;
+  }
+  if (profile.launchType === "shortcut") {
+    return <Link2 size={size} />;
+  }
+  return <SquareTerminal size={size} />;
 }

@@ -14,11 +14,11 @@ use windows::{
         },
         Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS},
         Graphics::Gdi::{
-            CDS_TEST, CDS_TYPE, CDS_UPDATEREGISTRY, ChangeDisplaySettingsExW, DEVMODEW,
+            CDS_RESET, CDS_TEST, CDS_TYPE, CDS_UPDATEREGISTRY, ChangeDisplaySettingsExW, DEVMODEW,
             DISP_CHANGE_SUCCESSFUL, DISPLAY_DEVICE_ACTIVE, DISPLAY_DEVICE_PRIMARY_DEVICE,
             DISPLAY_DEVICEW, DM_BITSPERPEL, DM_DISPLAYFREQUENCY, DM_PELSHEIGHT, DM_PELSWIDTH,
-            ENUM_CURRENT_SETTINGS, ENUM_DISPLAY_SETTINGS_MODE, EnumDisplayDevicesW,
-            EnumDisplaySettingsW,
+            ENUM_CURRENT_SETTINGS, ENUM_DISPLAY_SETTINGS_MODE, ENUM_REGISTRY_SETTINGS,
+            EnumDisplayDevicesW, EnumDisplaySettingsW,
         },
     },
     core::PCWSTR,
@@ -150,6 +150,41 @@ pub fn current_mode(device_name: &str) -> Result<DisplayMode, String> {
         .ok_or_else(|| format!("无法读取显示器 {device_name} 的当前模式"))
 }
 
+pub fn registry_mode(device_name: &str) -> Result<DisplayMode, String> {
+    read_mode(device_name, ENUM_REGISTRY_SETTINGS)
+        .map(|mode| to_mode(device_name, &mode))
+        .ok_or_else(|| format!("无法读取显示器 {device_name} 的持久显示模式"))
+}
+
+pub fn mode_matches(actual: &DisplayMode, expected: &DisplayMode) -> bool {
+    actual.device_name == expected.device_name
+        && actual.width == expected.width
+        && actual.height == expected.height
+        && actual.refresh_rate == expected.refresh_rate
+        && actual.bits_per_pixel == expected.bits_per_pixel
+}
+
+pub fn verify_persistent_mode(expected: &DisplayMode) -> Result<(), String> {
+    let current = current_mode(&expected.device_name)?;
+    if !mode_matches(&current, expected) {
+        return Err(format!(
+            "当前显示模式验证失败，期望 {}，实际 {}",
+            expected.label(),
+            current.label()
+        ));
+    }
+
+    let persisted = registry_mode(&expected.device_name)?;
+    if !mode_matches(&persisted, expected) {
+        return Err(format!(
+            "持久显示模式验证失败，期望 {}，实际 {}",
+            expected.label(),
+            persisted.label()
+        ));
+    }
+    Ok(())
+}
+
 pub fn enumerate_displays() -> Result<Vec<DisplayInfo>, String> {
     let mut displays = Vec::new();
     let physical_names = physical_monitor_names();
@@ -193,6 +228,37 @@ pub fn enumerate_displays() -> Result<Vec<DisplayInfo>, String> {
         displays.sort_by_key(|display| !display.is_primary);
         Ok(displays)
     }
+}
+
+/// 只枚举当前活动显示器的设备名。自动接管每次轮询都要用它来筛掉目标显示器
+/// 已经不存在的配置，所以刻意不读 friendly name 和当前模式。
+/// 返回空集合表示这次枚举不可信，调用方不得据此认为“没有任何显示器”。
+pub fn active_device_names() -> HashSet<String> {
+    let mut names = HashSet::new();
+    let mut index = 0;
+
+    loop {
+        let mut device = DISPLAY_DEVICEW {
+            cb: size_of::<DISPLAY_DEVICEW>() as u32,
+            ..Default::default()
+        };
+
+        let ok = unsafe { EnumDisplayDevicesW(PCWSTR::null(), index, &mut device, 0) };
+        if !ok.as_bool() {
+            break;
+        }
+        index += 1;
+
+        if device.StateFlags.0 & DISPLAY_DEVICE_ACTIVE.0 == 0 {
+            continue;
+        }
+        let device_name = utf16_array(&device.DeviceName);
+        if !device_name.trim().is_empty() {
+            names.insert(device_name);
+        }
+    }
+
+    names
 }
 
 pub fn enumerate_modes(device_name: &str) -> Result<Vec<DisplayMode>, String> {
@@ -277,5 +343,42 @@ pub fn switch_mode(target: &DisplayMode) -> Result<(), String> {
 }
 
 pub fn switch_mode_persistent(target: &DisplayMode) -> Result<(), String> {
-    switch_mode_with_flags(target, CDS_UPDATEREGISTRY)
+    switch_mode_with_flags(target, CDS_UPDATEREGISTRY | CDS_RESET)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mode_matches;
+    use crate::model::DisplayMode;
+
+    fn mode(device_name: &str, width: u32, height: u32, refresh_rate: u32) -> DisplayMode {
+        DisplayMode {
+            device_name: device_name.to_string(),
+            width,
+            height,
+            refresh_rate,
+            bits_per_pixel: 32,
+        }
+    }
+
+    #[test]
+    fn persistent_mode_match_requires_all_display_properties() {
+        let expected = mode(r"\\.\DISPLAY1", 2560, 1440, 280);
+        assert!(mode_matches(&expected, &expected));
+        assert!(!mode_matches(
+            &mode(r"\\.\DISPLAY2", 2560, 1440, 280),
+            &expected,
+        ));
+        assert!(!mode_matches(
+            &mode(r"\\.\DISPLAY1", 2304, 1440, 280),
+            &expected,
+        ));
+        assert!(!mode_matches(
+            &mode(r"\\.\DISPLAY1", 2560, 1440, 240),
+            &expected,
+        ));
+        let mut wrong_depth = expected.clone();
+        wrong_depth.bits_per_pixel = 24;
+        assert!(!mode_matches(&wrong_depth, &expected));
+    }
 }
