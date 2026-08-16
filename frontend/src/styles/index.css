@@ -40,6 +40,43 @@
   --tt-bg: #11151c;
   --tt-fg: #ffffff;
   --tt-border: rgb(255 255 255 / 14%);
+
+  /* 字号阶梯。原本 14 种字号相邻只差 1px，等于没有阶梯；这里按用途收敛成 8 级。 */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 26px;
+
+  /* 圆角层级。原本 3–14px 之间散落 13 种取值，同类元素圆角并不一致。 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 999px;
+
+  /* 间距标尺。桌面工具窗口最小 760×560，信息密度是刚需，
+     因此用 2px 基数而不是网页常见的 4px，避免整体被撑松。 */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+
+  /* 高度层级。原本只有 menu/dialog 两个 token，另有 8 处一次性阴影。
+     1–3 为投影，4–5 复用既有 token 以保留暗色主题的覆盖。 */
+  --elevation-1: 0 1px 2px rgb(20 27 38 / 6%);
+  --elevation-2: 0 2px 8px rgb(20 27 38 / 8%);
+  --elevation-3: 0 8px 22px rgb(20 27 38 / 10%);
+  --elevation-up: 0 -5px 20px rgb(20 27 38 / 4%);
+  --elevation-4: var(--shadow-menu);
+  --elevation-5: var(--shadow-dialog);
 }
 
 :root[data-theme="dark"] {
@@ -72,6 +109,12 @@
   --danger-soft: #3b2025;
   --shadow-menu: 0 16px 36px rgb(0 0 0 / 38%), 0 2px 8px rgb(0 0 0 / 24%);
   --shadow-dialog: 0 30px 80px rgb(0 0 0 / 48%), 0 4px 16px rgb(0 0 0 / 28%);
+
+  /* 暗色下投影必须换成纯黑并加深，否则亮色系的 rgb(20 27 38) 几乎看不见。 */
+  --elevation-1: 0 1px 2px rgb(0 0 0 / 28%);
+  --elevation-2: 0 2px 8px rgb(0 0 0 / 34%);
+  --elevation-3: 0 8px 22px rgb(0 0 0 / 42%);
+  --elevation-up: 0 -5px 20px rgb(0 0 0 / 32%);
   --tabs-text-muted: var(--text-secondary);
   --tabs-text-active: var(--text);
   --tabs-bar-bg: var(--surface-muted);
@@ -111,7 +154,7 @@ body,
 body {
   background: var(--canvas);
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--text-md);
   letter-spacing: 0;
   line-height: 1.45;
   text-rendering: optimizeLegibility;
@@ -208,14 +251,14 @@ a svg {
 }
 
 .brand-copy strong {
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 650;
 }
 
 .brand-copy span {
   margin-top: 3px;
   color: var(--primary);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 650;
   text-transform: uppercase;
 }
@@ -244,7 +287,7 @@ a svg {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   padding: 18px 10px;
 }
 
@@ -259,7 +302,7 @@ a svg {
   color: var(--nav-muted);
   background: transparent;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition:
     color var(--duration-quick) var(--ease-smooth-out),
@@ -308,7 +351,7 @@ a svg {
 .sidebar-item-label {
   margin-left: 10px;
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -321,7 +364,7 @@ a svg {
   padding: 0 12px 0 18px;
   color: var(--nav-muted);
   border-top: 1px solid rgb(255 255 255 / 7%);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .sidebar-foot > svg {
@@ -382,7 +425,7 @@ a svg {
 .titlebar-context strong {
   overflow: hidden;
   font-family: Bahnschrift, "Segoe UI Variable", sans-serif;
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -391,7 +434,7 @@ a svg {
 .titlebar-kicker {
   margin-right: 10px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .window-actions {
@@ -462,7 +505,7 @@ a svg {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 24px;
+  gap: var(--space-8);
   margin-bottom: 22px;
   padding-bottom: 17px;
   border-bottom: 1px solid var(--border);
@@ -477,7 +520,7 @@ a svg {
 .settings-heading h1 {
   margin: 0;
   font-family: Bahnschrift, "Segoe UI Variable", sans-serif;
-  font-size: 24px;
+  font-size: var(--text-xl);
   font-weight: 650;
   line-height: 1.15;
 }
@@ -486,7 +529,7 @@ a svg {
 .settings-heading p {
   margin: 7px 0 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-base);
 }
 
 .button,
@@ -494,12 +537,12 @@ a svg {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: var(--space-2);
   flex: 0 0 auto;
   min-height: 36px;
   padding: 0 14px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-weight: 600;
   line-height: 1;
@@ -624,7 +667,7 @@ a svg {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -672,7 +715,7 @@ a svg {
 .button.compact {
   min-height: 30px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .icon-button {
@@ -698,24 +741,24 @@ a svg {
 .game-library-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-3);
 }
 
 .library-auto-switch {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   min-height: 36px;
   padding: 0 9px;
   color: var(--text-secondary);
   background: var(--surface-subtle);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   white-space: nowrap;
 }
 
 .library-auto-switch > span {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 650;
 }
 
@@ -743,14 +786,14 @@ a svg {
 .profile-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--space-6);
 }
 
 .profile-grid.is-list {
   width: 100%;
   max-width: 940px;
   grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--space-4);
   overflow-x: hidden;
   container: profile-list / inline-size;
 }
@@ -763,8 +806,8 @@ a svg {
   min-width: 0;
   min-height: 80px;
   padding: 13px 14px;
-  column-gap: 12px;
-  row-gap: 10px;
+  column-gap: var(--space-5);
+  row-gap: var(--space-4);
 }
 
 .profile-grid.is-list .profile-card-header {
@@ -805,7 +848,7 @@ a svg {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: max-content;
   min-height: 48px;
   padding: 2px 10px;
@@ -877,8 +920,8 @@ a svg {
   padding: 18px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 1px 2px rgb(20 27 38 / 3%);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-1);
   transition:
     border-color var(--duration-quick) var(--ease-smooth-out),
     box-shadow var(--duration-fast) var(--ease-smooth-out),
@@ -887,7 +930,7 @@ a svg {
 
 .profile-card:hover {
   border-color: var(--border-strong);
-  box-shadow: 0 8px 22px rgb(20 27 38 / 8%);
+  box-shadow: var(--elevation-3);
   transform: translateY(-1px);
 }
 
@@ -949,7 +992,7 @@ a svg {
 .profile-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -958,7 +1001,7 @@ a svg {
   max-width: 100%;
   margin: 0;
   overflow: hidden;
-  font-size: 15px;
+  font-size: var(--text-md);
   font-weight: 700;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -971,7 +1014,7 @@ a svg {
   min-width: 0;
   margin: 5px 0 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .profile-process span {
@@ -986,13 +1029,13 @@ a svg {
   display: inline-flex;
   align-items: center;
   flex: none;
-  gap: 4px;
+  gap: var(--space-1);
   min-height: 23px;
   padding: 0 7px;
   color: var(--success);
   background: var(--success-soft);
-  border-radius: 4px;
-  font-size: 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1006,8 +1049,8 @@ a svg {
   overflow: hidden;
   color: var(--success);
   background: var(--success-soft);
-  border-radius: 5px;
-  font-size: 11px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 
@@ -1016,7 +1059,7 @@ a svg {
   height: 7px;
   margin-right: 7px;
   background: var(--success);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
 }
 
 .profile-details {
@@ -1028,7 +1071,7 @@ a svg {
 .profile-detail-row {
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--space-4);
   align-items: start;
   min-height: 38px;
   padding: 8px 0;
@@ -1041,7 +1084,7 @@ a svg {
 
 .profile-detail-row dt {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .profile-detail-row dd {
@@ -1051,7 +1094,7 @@ a svg {
   margin: 0;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .profile-detail-row dd strong {
@@ -1075,13 +1118,13 @@ a svg {
 .profile-mode-row dd {
   color: var(--text);
   font-family: Bahnschrift, "Segoe UI Variable", sans-serif;
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 600;
 }
 
 .profile-card-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-3);
   margin-top: auto;
 }
 
@@ -1100,20 +1143,20 @@ a svg {
   padding: 5px;
   background: var(--surface-raised);
   border: 1px solid var(--border);
-  border-radius: 7px;
-  box-shadow: var(--shadow-menu);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-4);
   animation: menu-in var(--duration-fast) var(--ease-smooth-out);
 }
 
 .profile-menu-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-3);
   min-height: 34px;
   padding: 0 9px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: default;
-  font-size: 12px;
+  font-size: var(--text-sm);
   outline: 0;
 }
 
@@ -1154,7 +1197,7 @@ a svg {
 
 .game-library-empty h2 {
   margin: 15px 0 5px;
-  font-size: 17px;
+  font-size: var(--text-lg);
 }
 
 .game-library-empty p {
@@ -1173,12 +1216,12 @@ a svg {
 .skeleton-line {
   height: 12px;
   background: var(--surface-muted);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .skeleton-title { width: 54%; height: 16px; }
 .skeleton-subtitle { width: 72%; margin-top: 9px; }
-.skeleton-details { display: grid; gap: 18px; margin-top: 30px; }
+.skeleton-details { display: grid; gap: var(--space-7); margin-top: 30px; }
 .skeleton-action { height: 36px; margin-top: auto; }
 
 .safety-bar {
@@ -1189,12 +1232,12 @@ a svg {
   grid-row: 3;
   grid-template-columns: minmax(190px, 1fr) auto auto;
   align-items: center;
-  gap: 18px;
+  gap: var(--space-7);
   min-width: 0;
   padding: 0 16px 0 22px;
   background: var(--surface);
   border-top: 1px solid var(--border);
-  box-shadow: 0 -5px 20px rgb(20 27 38 / 3%);
+  box-shadow: var(--elevation-up);
 }
 
 .safety-default,
@@ -1208,7 +1251,7 @@ a svg {
 .safety-default {
   align-items: baseline;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .safety-default svg {
@@ -1222,7 +1265,7 @@ a svg {
   overflow: hidden;
   color: var(--text);
   font-family: Bahnschrift, "Segoe UI Variable", sans-serif;
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1231,7 +1274,7 @@ a svg {
   justify-self: end;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1241,7 +1284,7 @@ a svg {
   height: 7px;
   margin-right: 7px;
   background: var(--success);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   box-shadow: 0 0 0 3px var(--success-soft);
 }
 
@@ -1259,7 +1302,7 @@ a svg {
 
 .safety-actions {
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .confirm-overlay {
@@ -1287,8 +1330,8 @@ a svg {
   padding: 22px;
   background: var(--surface-raised);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-dialog);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-5);
   translate: -50% -50%;
 }
 
@@ -1301,9 +1344,9 @@ a svg {
   margin-bottom: 14px;
   color: var(--info);
   background: var(--info-soft);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   font-family: Bahnschrift, sans-serif;
-  font-size: 17px;
+  font-size: var(--text-lg);
   font-weight: 700;
 }
 
@@ -1320,21 +1363,21 @@ a svg {
 .confirm-title {
   margin: 0;
   font-family: Bahnschrift, "Segoe UI Variable", sans-serif;
-  font-size: 18px;
+  font-size: var(--text-lg);
   font-weight: 650;
 }
 
 .confirm-description {
   margin: 9px 0 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-base);
   line-height: 1.65;
 }
 
 .confirm-choice-group {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--space-3);
   margin-top: 16px;
 }
 
@@ -1342,13 +1385,13 @@ a svg {
   display: grid;
   grid-template-columns: 16px 18px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: var(--space-3);
   min-height: 58px;
   padding: 9px 10px;
   color: var(--text-secondary);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   text-align: left;
   transition:
@@ -1381,14 +1424,14 @@ a svg {
   width: 16px;
   height: 16px;
   border: 1.5px solid var(--border-strong);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
 }
 
 .confirm-choice-radio > span {
   width: 8px;
   height: 8px;
   background: var(--info);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   opacity: 0;
   transform: scale(0.55);
   transition:
@@ -1424,13 +1467,13 @@ a svg {
 }
 
 .confirm-choice-copy strong {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .confirm-choice-copy small {
   margin-top: 3px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--text-2xs);
   line-height: 1.35;
 }
 
@@ -1446,14 +1489,14 @@ a svg {
 .motion-checkbox {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-3);
   padding: 2px 0;
   color: var(--text-secondary);
   background: transparent;
   border: 0;
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .motion-checkbox-box {
@@ -1465,7 +1508,7 @@ a svg {
   flex: 0 0 17px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   transition:
     background var(--check-box) var(--check-ease),
     border-color var(--check-box) var(--check-ease);
@@ -1489,7 +1532,7 @@ a svg {
 .motion-checkbox:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .motion-checkbox:disabled {
@@ -1502,15 +1545,15 @@ a svg {
   padding: 8px 10px;
   color: var(--danger);
   background: var(--danger-soft);
-  border-radius: 5px;
-  font-size: 11px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
 }
 
 .confirm-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-3);
   margin-top: 22px;
 }
 
@@ -1545,8 +1588,8 @@ a svg {
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-left: 3px solid var(--danger);
-  border-radius: 7px;
-  box-shadow: var(--shadow-menu);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-4);
   pointer-events: none;
 }
 
@@ -1571,9 +1614,9 @@ a svg {
   color: var(--tt-fg);
   background: var(--tt-bg);
   border: 1px solid var(--tt-border);
-  border-radius: 6px;
-  box-shadow: var(--shadow-menu);
-  font-size: 11px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-4);
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1.4;
@@ -1625,7 +1668,7 @@ a svg {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-2);
   white-space: nowrap;
 }
 
@@ -1651,7 +1694,7 @@ a svg {
   padding: 0;
   background: var(--border-strong);
   border: 0;
-  border-radius: 11px;
+  border-radius: var(--radius-xl);
   cursor: pointer;
 }
 
@@ -1665,7 +1708,7 @@ a svg {
   height: 18px;
   margin-left: 2px;
   background: #ffffff;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
 }
 
@@ -1692,7 +1735,7 @@ a svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: var(--space-8);
   margin-bottom: 2px;
   padding-bottom: 18px;
   border-bottom: 1px solid var(--border);
@@ -1718,7 +1761,7 @@ a svg {
   margin: 2px 0 0;
   overflow: hidden;
   font-family: Bahnschrift, "Segoe UI Variable", sans-serif;
-  font-size: 22px;
+  font-size: var(--text-xl);
   font-weight: 650;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -1729,7 +1772,7 @@ a svg {
 .section-kicker {
   margin: 0;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -1737,7 +1780,7 @@ a svg {
 .profile-editor-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-5);
   flex: 0 0 auto;
 }
 
@@ -1745,7 +1788,7 @@ a svg {
   display: inline-flex;
   align-items: center;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 
@@ -1754,7 +1797,7 @@ a svg {
   height: 6px;
   margin-right: 6px;
   background: var(--success);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   content: "";
 }
 
@@ -1787,7 +1830,7 @@ a svg {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
+  gap: var(--space-7);
   min-width: 0;
 }
 
@@ -1802,7 +1845,7 @@ a svg {
 .section-heading h3,
 .section-heading strong {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 700;
 }
 
@@ -1811,7 +1854,7 @@ a svg {
   max-width: 360px;
   margin: 1px 0 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 400;
   text-align: right;
 }
@@ -1825,9 +1868,9 @@ a svg {
   margin-right: 9px;
   color: var(--primary);
   background: var(--primary-soft);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-family: Bahnschrift, sans-serif;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 700;
 }
 
@@ -1840,18 +1883,18 @@ a svg {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   width: 100%;
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
 }
 
 .profile-source-tabs .t-tab {
   min-width: 0;
-  border-radius: 5px;
-  font-size: 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
 }
 
 .profile-source-tabs .t-tabs-pill {
-  border-radius: 5px;
-  box-shadow: 0 1px 4px rgb(20 27 38 / 8%);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-2);
 }
 
 .source-panel {
@@ -1860,7 +1903,7 @@ a svg {
   padding: 13px;
   background: var(--surface-subtle);
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
 }
 
 .source-panel-executable {
@@ -1874,14 +1917,14 @@ a svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-3);
   min-height: 32px;
   margin-bottom: 9px;
 }
 
 .source-toolbar-copy {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .search-field {
@@ -1894,7 +1937,7 @@ a svg {
   color: var(--text-muted);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
 }
 
 .search-field:focus-within {
@@ -1919,7 +1962,7 @@ a svg {
 
 .source-list {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   max-height: 184px;
   overflow: auto;
 }
@@ -1928,14 +1971,14 @@ a svg {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) minmax(50px, auto) 18px;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-3);
   width: 100%;
   min-height: 48px;
   padding: 6px 9px;
   color: var(--text);
   background: var(--surface);
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   text-align: left;
   transition:
@@ -1978,7 +2021,7 @@ a svg {
 .source-item-copy strong,
 .selected-source-copy strong {
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1988,7 +2031,7 @@ a svg {
   margin-top: 2px;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1998,20 +2041,20 @@ a svg {
   overflow: hidden;
   color: var(--text-muted);
   font-family: Bahnschrift, "Segoe UI Variable", sans-serif;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .source-skeleton {
   display: grid;
-  gap: 7px;
+  gap: var(--space-2);
 }
 
 .source-skeleton span {
   height: 46px;
   background: var(--surface-muted);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   animation: t-skel-pulse var(--pulse-dur) ease-in-out var(--pulse-count);
 }
 
@@ -2023,13 +2066,13 @@ a svg {
   min-height: 118px;
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-align: center;
 }
 
 .source-error {
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-4);
   color: var(--danger);
 }
 
@@ -2040,7 +2083,7 @@ a svg {
 .launcher-source-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--space-4);
 }
 
 .launcher-preset,
@@ -2052,7 +2095,7 @@ a svg {
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   text-align: left;
   transition:
@@ -2087,14 +2130,14 @@ a svg {
 
 .launcher-preset strong,
 .browse-source strong {
-  font-size: 13px;
+  font-size: var(--text-base);
 }
 
 .launcher-preset small,
 .browse-source small {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .launcher-preset-mark {
@@ -2113,13 +2156,13 @@ a svg {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-4);
   min-height: 52px;
   margin-top: 11px;
   padding: 8px 10px;
   background: var(--info-soft);
   border-left: 3px solid var(--info);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
 }
 
 .source-tag,
@@ -2134,8 +2177,8 @@ a svg {
   padding: 0 6px;
   color: var(--text-secondary);
   background: var(--surface-muted);
-  border-radius: 4px;
-  font-size: 9px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -2148,7 +2191,7 @@ a svg {
 .field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--space-6);
 }
 
 .mode-fields {
@@ -2171,7 +2214,7 @@ a svg {
   min-height: 20px;
   margin-bottom: 6px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 650;
 }
 
@@ -2190,7 +2233,7 @@ a svg {
   line-height: 1;
   background: var(--surface-raised);
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   outline: 0;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--text) 3%, transparent),
@@ -2240,7 +2283,7 @@ a svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-4);
   cursor: pointer;
   text-align: left;
 }
@@ -2249,7 +2292,7 @@ a svg {
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 7px;
+  gap: var(--space-2);
   overflow: hidden;
   line-height: 1;
 }
@@ -2271,7 +2314,7 @@ a svg {
   flex: 0 0 auto;
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1;
 }
 
@@ -2308,8 +2351,8 @@ a svg {
   color: var(--text);
   background: var(--surface-raised);
   border: 1px solid var(--border-strong);
-  border-radius: 7px;
-  box-shadow: var(--shadow-menu);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-4);
   overscroll-behavior: contain;
   animation: menu-in var(--duration-fast) var(--ease-smooth-out);
   scrollbar-color: var(--border-strong) transparent;
@@ -2320,10 +2363,10 @@ a svg {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 18px;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-3);
   min-height: 38px;
   padding: 6px 8px 6px 10px;
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   cursor: default;
   outline: 0;
 }
@@ -2350,7 +2393,7 @@ a svg {
   align-items: center;
   justify-content: space-between;
   min-width: 0;
-  gap: 12px;
+  gap: var(--space-5);
   line-height: 1;
 }
 
@@ -2365,7 +2408,7 @@ a svg {
   flex: 0 0 auto;
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 500;
   line-height: 1;
 }
@@ -2380,7 +2423,7 @@ a svg {
 .input-with-action {
   display: flex;
   min-width: 0;
-  gap: 7px;
+  gap: var(--space-2);
 }
 
 .input-with-action > input {
@@ -2420,7 +2463,7 @@ a svg {
   background: var(--surface-subtle);
   border-left: 1px solid var(--border);
   border-radius: 0 5px 5px 0;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   pointer-events: none;
   transition:
     color var(--duration-quick) var(--ease-smooth-out),
@@ -2443,8 +2486,8 @@ a svg {
   color: var(--text-secondary);
   background: var(--surface-subtle);
   border-left: 3px solid var(--info);
-  border-radius: 4px;
-  font-size: 11px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
 }
 
 .detect-status {
@@ -2455,7 +2498,7 @@ a svg {
 .process-candidates {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: var(--space-2);
   margin-top: 9px;
 }
 
@@ -2465,9 +2508,9 @@ a svg {
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .candidate-button:hover {
@@ -2501,7 +2544,7 @@ a svg {
 .advanced-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--space-6);
   padding-top: 13px;
 }
 
@@ -2518,7 +2561,7 @@ a svg {
 
 .page-empty h2 {
   margin: 13px 0 5px;
-  font-size: 16px;
+  font-size: var(--text-lg);
 }
 
 .page-empty p {
@@ -2529,7 +2572,7 @@ a svg {
 .displays-workspace {
   display: grid;
   grid-template-columns: 218px minmax(0, 1fr);
-  gap: 15px;
+  gap: var(--space-6);
   align-items: start;
 }
 
@@ -2538,7 +2581,7 @@ a svg {
   min-width: 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .display-list-panel {
@@ -2557,26 +2600,26 @@ a svg {
 .compact-heading h2,
 .display-detail-header h2 {
   margin: 3px 0 0;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .display-list {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
   margin-top: 9px;
 }
 
 .display-option {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr);
-  gap: 8px;
+  gap: var(--space-3);
   width: 100%;
   min-height: 78px;
   padding: 10px 8px;
   color: var(--text);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   text-align: left;
   transition:
@@ -2601,7 +2644,7 @@ a svg {
   height: 30px;
   color: var(--info);
   background: var(--surface);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
 }
 
 .display-option-copy {
@@ -2612,7 +2655,7 @@ a svg {
 
 .display-option-index {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-weight: 700;
 }
 
@@ -2625,14 +2668,14 @@ a svg {
 
 .display-option-copy strong {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .display-option-copy small {
   margin-top: 3px;
   color: var(--text-secondary);
   font-family: Bahnschrift, sans-serif;
-  font-size: 10px;
+  font-size: var(--text-2xs);
 }
 
 .display-option > .status-tag {
@@ -2660,7 +2703,7 @@ a svg {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 15px;
+  gap: var(--space-6);
   padding: 16px 18px 14px;
   border-bottom: 1px solid var(--border);
 }
@@ -2673,7 +2716,7 @@ a svg {
   margin: 3px 0 0;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2705,7 +2748,7 @@ a svg {
   margin-right: 9px;
   color: var(--info);
   background: var(--info-soft);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
 }
 
 .default-mode-summary .mode-summary-icon {
@@ -2721,14 +2764,14 @@ a svg {
 
 .mode-summary-item span {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--text-2xs);
 }
 
 .mode-summary-item strong {
   margin-top: 2px;
   overflow: hidden;
   font-family: Bahnschrift, sans-serif;
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2736,7 +2779,7 @@ a svg {
 .warning-notice {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-3);
   margin: 13px 18px 0;
   color: var(--warning);
   background: var(--warning-soft);
@@ -2767,14 +2810,14 @@ a svg {
 
 .resolution-groups {
   display: grid;
-  gap: 7px;
+  gap: var(--space-2);
 }
 
 .resolution-group {
   padding: 0 10px;
   background: var(--surface-subtle);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .resolution-group .t-acc-head {
@@ -2798,27 +2841,27 @@ a svg {
 
 .resolution-group-copy strong {
   font-family: Bahnschrift, sans-serif;
-  font-size: 13px;
+  font-size: var(--text-base);
 }
 
 .resolution-group-copy small {
   margin-top: 2px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--text-2xs);
   font-weight: 400;
 }
 
 .resolution-mode-tags {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
   margin-left: auto;
 }
 
 .refresh-rate-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: var(--space-2);
   padding: 2px 0 10px;
 }
 
@@ -2830,7 +2873,7 @@ a svg {
   padding: 6px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
@@ -2861,7 +2904,7 @@ a svg {
   color: #ffffff;
   background: var(--surface);
   border: 1px solid var(--border-strong);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
 }
 
 .is-selected .resolution-radio {
@@ -2871,7 +2914,7 @@ a svg {
 
 .refresh-rate-option > strong {
   font-family: Bahnschrift, sans-serif;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .modes-loading,
@@ -2883,26 +2926,26 @@ a svg {
   color: var(--text-secondary);
   background: var(--surface-subtle);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .modes-loading {
   display: grid;
-  gap: 10px;
+  gap: var(--space-4);
 }
 
 .modes-error {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-3);
   color: var(--danger);
 }
 
 .modes-error p {
   margin: 3px 0 0;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--text-2xs);
 }
 
 .display-apply-bar {
@@ -2911,7 +2954,7 @@ a svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--space-6);
   margin-top: 15px;
   padding: 12px 18px;
   background: color-mix(in srgb, var(--surface) 94%, transparent);
@@ -2927,14 +2970,14 @@ a svg {
 
 .display-selection-summary span {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--text-2xs);
 }
 
 .display-selection-summary strong {
   margin-top: 2px;
   overflow: hidden;
   font-family: Bahnschrift, sans-serif;
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2942,7 +2985,7 @@ a svg {
 .skeleton-block {
   min-height: 58px;
   background: var(--surface-muted);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
 }
 
 .skeleton-short {
@@ -2993,25 +3036,25 @@ a svg {
   margin-right: 11px;
   color: var(--info);
   background: var(--info-soft);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .settings-section-header h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .settings-section-header p {
   margin: 4px 0 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: var(--space-8);
   min-height: 62px;
   margin-top: 13px;
   padding: 10px 0 10px 47px;
@@ -3024,13 +3067,13 @@ a svg {
 }
 
 .setting-copy strong {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .setting-copy span {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
 }
 
 .theme-tabs {
@@ -3038,23 +3081,23 @@ a svg {
 }
 
 .theme-tabs .t-tabs {
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
 }
 
 .theme-tabs .t-tab,
 .theme-tabs .t-tabs-pill {
-  border-radius: 5px;
+  border-radius: var(--radius-md);
 }
 
 .setting-control-with-status {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-3);
 }
 
 .setting-saving {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
 }
 
 .window-behavior-list {
@@ -3072,26 +3115,26 @@ a svg {
 .behavior-control {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-3);
 }
 
 .behavior-radio-group {
   display: grid;
   grid-template-columns: repeat(2, minmax(112px, 1fr));
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .behavior-radio {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   min-height: 34px;
   padding: 5px 8px;
   color: var(--text-secondary);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .behavior-radio:hover {
@@ -3115,14 +3158,14 @@ a svg {
   height: 16px;
   flex: 0 0 16px;
   border: 1.5px solid var(--border-strong);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
 }
 
 .behavior-radio-mark::after {
   width: 8px;
   height: 8px;
   background: var(--info);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   content: "";
   opacity: 0;
   transform: scale(0.55);
@@ -3153,14 +3196,14 @@ a svg {
 .window-prompt-row {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-3);
   min-height: 46px;
   padding-top: 10px;
 }
 
 .window-prompt-row > span:not(.setting-saving) {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
 }
 
 .window-prompt-row .setting-saving {
@@ -3171,7 +3214,7 @@ a svg {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 11px;
+  gap: var(--space-4);
   margin: 17px 0 13px 47px;
   padding: 12px 0;
 }
@@ -3185,9 +3228,9 @@ a svg {
   color: #ffffff;
   background: var(--nav);
   border: 2px solid var(--primary);
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
   font-family: Bahnschrift, sans-serif;
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 700;
 }
 
@@ -3198,13 +3241,13 @@ a svg {
 
 .application-identity > div:nth-child(2) strong {
   font-family: Bahnschrift, sans-serif;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 
 .application-identity > div:nth-child(2) span {
   margin-top: 3px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
 }
 
 .version-tag {
@@ -3217,7 +3260,7 @@ a svg {
   min-height: 32px;
   margin: 0 0 13px 47px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .technical-information {
@@ -3229,7 +3272,7 @@ a svg {
 .technical-information > div {
   display: grid;
   grid-template-columns: 112px minmax(0, 1fr);
-  gap: 16px;
+  gap: var(--space-6);
   min-height: 39px;
   padding: 9px 0;
   border-bottom: 1px solid var(--border);
@@ -3241,7 +3284,7 @@ a svg {
 
 .technical-information dt {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
 }
 
 .technical-information dd {
@@ -3250,7 +3293,7 @@ a svg {
   min-width: 0;
   margin: 0;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .technical-information dd svg {
@@ -3275,11 +3318,11 @@ a svg {
   flex-direction: column;
   align-items: center;
   padding: 32px 28px;
-  gap: 14px;
+  gap: var(--space-6);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: var(--shadow-menu);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--elevation-4);
   text-align: center;
 }
 
@@ -3299,7 +3342,7 @@ a svg {
 
 .running-avatar .app-icon-fallback {
   background: var(--surface-muted);
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
 }
 
 .running-title {
@@ -3307,7 +3350,7 @@ a svg {
   margin: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 20px;
+  font-size: var(--text-2xl);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3318,7 +3361,7 @@ a svg {
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--text-base);
   line-height: 1.5;
 }
 
@@ -3327,11 +3370,11 @@ a svg {
   align-items: center;
   margin: 0;
   padding: 7px 14px;
-  gap: 7px;
+  gap: var(--space-2);
   background: var(--surface-muted);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--text-base);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3344,7 +3387,7 @@ a svg {
   flex-wrap: wrap;
   justify-content: center;
   margin-top: 4px;
-  gap: 10px;
+  gap: var(--space-4);
 }
 
 @media (max-width: 880px) {
@@ -3360,13 +3403,13 @@ a svg {
 
   .safety-bar {
     grid-template-columns: minmax(170px, 1fr) auto auto;
-    gap: 10px;
+    gap: var(--space-4);
     padding-right: 16px;
     padding-left: 16px;
   }
 
   .runtime-state {
-    font-size: 10px;
+    font-size: var(--text-2xs);
   }
 
   .runtime-dot {
@@ -3398,11 +3441,11 @@ a svg {
 
   .profile-editor-heading h1 {
     max-width: 300px;
-    font-size: 19px;
+    font-size: var(--text-lg);
   }
 
   .profile-editor-actions {
-    gap: 8px;
+    gap: var(--space-3);
   }
 
   .edit-state {
@@ -3426,7 +3469,7 @@ a svg {
 
   .displays-workspace {
     grid-template-columns: 198px minmax(0, 1fr);
-    gap: 11px;
+    gap: var(--space-4);
   }
 
   .page.displays-page {
@@ -3478,7 +3521,7 @@ a svg {
 
   .safety-bar {
     grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 8px;
+    gap: var(--space-3);
     padding-right: 12px;
     padding-left: 12px;
   }
@@ -3506,7 +3549,7 @@ a svg {
 
   .running-card {
     padding: 20px 24px;
-    gap: 10px;
+    gap: var(--space-4);
   }
 
   .running-avatar {
@@ -3515,7 +3558,7 @@ a svg {
   }
 
   .running-title {
-    font-size: 18px;
+    font-size: var(--text-lg);
   }
 }
 
