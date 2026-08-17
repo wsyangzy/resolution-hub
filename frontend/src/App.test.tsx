@@ -219,13 +219,15 @@ describe("App controller", () => {
     const user = userEvent.setup();
     vi.mocked(tauriApi.listProfiles).mockResolvedValue([profile]);
     render(<App />);
-    const layoutButton = await screen.findByRole("button", { name: "切换为单行展示" });
+    await screen.findByRole("button", { name: `启动 ${profile.name}` });
+    // 常驻 tooltip 目前唯一的实际使用点是配置摘要里的「启动来源」药丸。
+    const sourceTag = document.querySelector<HTMLElement>('[data-kind="source"]')!;
 
-    expect(layoutButton).not.toHaveAttribute("title");
-    await user.hover(layoutButton);
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("切换为单行展示");
+    expect(sourceTag).not.toHaveAttribute("title");
+    await user.hover(sourceTag);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("启动来源");
 
-    await user.click(layoutButton);
+    await user.click(sourceTag);
     await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
 
     const statusMode = document.querySelector<HTMLElement>("[data-tooltip-overflow]")!;
@@ -536,24 +538,6 @@ describe("App controller", () => {
     expect(await screen.findByRole("button", { name: "添加第一个游戏" })).toBeInTheDocument();
   });
 
-  it("switches the game library between card and single-row layouts", async () => {
-    const user = userEvent.setup();
-    window.localStorage.setItem("resolution-hub-library-layout", "list");
-    vi.mocked(tauriApi.listProfiles).mockResolvedValue([profile]);
-    const { container } = render(<App />);
-
-    const layout = await screen.findByRole("button", { name: "切换为卡片展示" });
-    expect(container.querySelector(".profile-grid")).toHaveAttribute("data-layout", "list");
-
-    await user.click(layout);
-    expect(container.querySelector(".profile-grid")).toHaveAttribute("data-layout", "cards");
-    expect(window.localStorage.getItem("resolution-hub-library-layout")).toBe("cards");
-
-    await user.click(screen.getByRole("button", { name: "切换为单行展示" }));
-    expect(container.querySelector(".profile-grid")).toHaveAttribute("data-layout", "list");
-    expect(window.localStorage.getItem("resolution-hub-library-layout")).toBe("list");
-  });
-
   it("shows the running game on a focused page and locks navigation", async () => {
     vi.mocked(tauriApi.listProfiles).mockResolvedValue([profile]);
     vi.mocked(tauriApi.getRuntimeStatus).mockResolvedValue({
@@ -571,7 +555,7 @@ describe("App controller", () => {
     expect(screen.getByText("1920 × 1080 · 60 Hz", { selector: ".running-mode span" }))
       .toBeVisible();
     // 游戏库不再渲染，三个导航项在接管期间禁用。
-    expect(screen.queryByRole("button", { name: "切换为单行展示" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: `启动 ${profile.name}` })).not.toBeInTheDocument();
     for (const label of ["游戏库", "显示设置", "应用设置"]) {
       expect(screen.getByRole("button", { name: label })).toBeDisabled();
     }

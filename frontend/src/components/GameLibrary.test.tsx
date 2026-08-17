@@ -1,5 +1,4 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GameProfile, RuntimeStatus } from "../types";
@@ -64,8 +63,7 @@ describe("GameLibrary", () => {
     window.localStorage.clear();
   });
 
-  it("keeps the active action consistent with the launch action in the single-row layout", async () => {
-    const user = userEvent.setup();
+  it("keeps the active action consistent with the launch action", async () => {
     renderLibrary({
       ...idle,
       phase: "running",
@@ -75,9 +73,22 @@ describe("GameLibrary", () => {
       canRestore: true,
     });
 
-    await user.click(await screen.findByRole("button", { name: "切换为单行展示" }));
-    const activeAction = screen.getByRole("button", { name: "Test Game：游戏运行中" });
+    const activeAction = await screen.findByRole("button", { name: "Test Game：游戏运行中" });
     expect(activeAction).not.toHaveClass("is-compact");
     expect(activeAction).toHaveTextContent("运行中");
+  });
+
+  it("renders summary pills instead of repeated detail rows", async () => {
+    renderLibrary(idle);
+
+    const tags = await screen.findByRole("list", { name: "配置摘要" });
+    expect(tags).toBeVisible();
+    // 显示模式是卡片上唯一需要一眼扫到的数值，单独强调。
+    expect(tags.querySelector('[data-kind="mode"]')).toHaveTextContent("1920 × 1080 · 60 Hz");
+    // 显示器与模式的文案本身即完整信息，不再挂常驻 tooltip。
+    expect(tags.querySelector('[data-kind="display"]')).not.toHaveAttribute("data-tooltip");
+    expect(tags.querySelector('[data-kind="mode"]')).not.toHaveAttribute("data-tooltip");
+    // 启动来源药丸只显示类型，完整路径靠 tooltip 承载。
+    expect(tags.querySelector('[data-kind="source"]')).toHaveAttribute("data-tooltip");
   });
 });

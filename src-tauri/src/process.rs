@@ -143,7 +143,7 @@ pub fn foreground_process_id() -> Option<u32> {
 }
 
 /// 外层 `None` 表示这次没能拿到可信的进程快照；内层 `None` 表示快照可信但没有这个进程。
-fn lookup_pid(process_name: &str) -> Option<Option<u32>> {
+pub fn lookup_pid(process_name: &str) -> Option<Option<u32>> {
     let target = process_name.trim().trim_matches('"');
     if target.is_empty() {
         return Some(None);

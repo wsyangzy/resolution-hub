@@ -2,9 +2,7 @@ import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import {
   Activity,
   Cpu,
-  LayoutGrid,
   LibraryBig,
-  List,
   Monitor,
   MoreHorizontal,
   Pencil,
@@ -18,25 +16,6 @@ import { useRef, useState } from "react";
 import type { GameProfile, RuntimePhase, RuntimeStatus } from "../types";
 import { AppIcon, profileIconFallback, profileIconSource } from "./AppIcon";
 import { MotionSwitch, RuntimeText } from "./ui";
-
-type LibraryLayout = "cards" | "list";
-const LIBRARY_LAYOUT_STORAGE_KEY = "resolution-hub-library-layout";
-
-function initialLibraryLayout(): LibraryLayout {
-  try {
-    return window.localStorage.getItem(LIBRARY_LAYOUT_STORAGE_KEY) === "list" ? "list" : "cards";
-  } catch {
-    return "cards";
-  }
-}
-
-function storeLibraryLayout(layout: LibraryLayout) {
-  try {
-    window.localStorage.setItem(LIBRARY_LAYOUT_STORAGE_KEY, layout);
-  } catch {
-    // UI preferences must not block layout switching.
-  }
-}
 
 export interface GameLibraryProps {
   profiles: GameProfile[];
@@ -185,28 +164,33 @@ function ProfileCard({
         </div>
       )}
 
-      <dl className="profile-details">
-        <div className="profile-detail-row profile-launch-source-row">
-          <dt>启动来源</dt>
-          <dd>
-            <strong>{launchSourceLabel(profile)}</strong>
-            <span className="profile-detail-secondary" data-tooltip-overflow={launchSourceDetail(profile)}>
-              {launchSourceDetail(profile)}
-            </span>
-          </dd>
-        </div>
-        <div className="profile-detail-row profile-display-row">
-          <dt>目标显示器</dt>
-          <dd>
-            <Monitor size={14} aria-hidden="true" />
-            <span data-tooltip-overflow={profile.displayDevice}>{profile.displayDevice}</span>
-          </dd>
-        </div>
-        <div className="profile-detail-row profile-mode-row">
-          <dt>游戏显示模式</dt>
-          <dd>{formatProfileMode(profile)}</dd>
-        </div>
-      </dl>
+      <ul className="profile-tags" aria-label="配置摘要">
+        <li
+          className="profile-tag"
+          data-kind="source"
+          data-tooltip={`启动来源：${launchSourceLabel(profile)} · ${launchSourceDetail(profile)}`}
+        >
+          <span className="profile-tag-icon" aria-hidden="true">
+            {profileIconFallback(profile, 12)}
+          </span>
+          <span>{launchSourceLabel(profile)}</span>
+        </li>
+        <li
+          className="profile-tag"
+          data-kind="display"
+        >
+          <span className="profile-tag-icon" aria-hidden="true">
+            <Monitor size={12} />
+          </span>
+          <span data-tooltip-overflow={profile.displayDevice}>{profile.displayDevice}</span>
+        </li>
+        <li
+          className="profile-tag is-accent"
+          data-kind="mode"
+        >
+          <span>{formatProfileMode(profile)}</span>
+        </li>
+      </ul>
 
       <footer className="profile-card-actions">
         <button
@@ -277,17 +261,7 @@ export function GameLibrary({
   onAutoSwitchError,
 }: GameLibraryProps) {
   const busy = runtime.phase !== "idle" && runtime.phase !== "error";
-  const [layout, setLayout] = useState<LibraryLayout>(initialLibraryLayout);
   const [autoSwitchSaving, setAutoSwitchSaving] = useState(false);
-  const layoutToggleLabel = layout === "cards" ? "切换为单行展示" : "切换为卡片展示";
-
-  const toggleLayout = () => {
-    setLayout((current) => {
-      const next = current === "cards" ? "list" : "cards";
-      storeLibraryLayout(next);
-      return next;
-    });
-  };
 
   const updateAutoSwitch = async (enabled: boolean) => {
     if (autoSwitchSaving) {
@@ -321,20 +295,6 @@ export function GameLibrary({
               ariaLabel="自动接管外部启动的游戏"
             />
           </div>
-          {!loading && profiles.length > 0 && (
-            <button
-              type="button"
-              className="icon-button library-layout-toggle"
-              aria-label={layoutToggleLabel}
-              data-tooltip={layoutToggleLabel}
-              data-tooltip-side="bottom"
-              onClick={toggleLayout}
-            >
-              {layout === "cards"
-                ? <List size={18} aria-hidden="true" />
-                : <LayoutGrid size={18} aria-hidden="true" />}
-            </button>
-          )}
           <button type="button" className="button button-primary add-profile-button" onClick={onAdd} disabled={busy}>
             <Plus size={17} aria-hidden="true" />
             <span>添加游戏</span>
@@ -355,7 +315,7 @@ export function GameLibrary({
           </button>
         </div>
       ) : (
-        <div className={`profile-grid${layout === "list" ? " is-list" : ""}`} data-layout={layout}>
+        <div className="profile-grid">
           {profiles.map((profile) => (
             <ProfileCard
               key={profile.id}

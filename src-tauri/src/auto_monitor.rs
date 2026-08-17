@@ -280,7 +280,11 @@ impl AutoMonitor {
                 }
                 if Instant::now() < session.stabilize_until
                     && runtime
-                        .ensure_automatic_target(&current.profile, app)
+                        .ensure_automatic_target(
+                            &current.profile,
+                            current.pids.first().copied(),
+                            app,
+                        )
                         .is_err()
                 {
                     state.session = None;

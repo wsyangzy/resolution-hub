@@ -12,7 +12,7 @@ use windows::{
             DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes, QDC_ONLY_ACTIVE_PATHS,
             QueryDisplayConfig,
         },
-        Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS},
+        Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, HWND, LPARAM, RECT},
         Graphics::Gdi::{
             CDS_RESET, CDS_TEST, CDS_TYPE, CDS_UPDATEREGISTRY, ChangeDisplaySettingsExW, DEVMODEW,
             DISP_CHANGE_SUCCESSFUL, DISPLAY_DEVICE_ACTIVE, DISPLAY_DEVICE_PRIMARY_DEVICE,
@@ -20,8 +20,12 @@ use windows::{
             ENUM_CURRENT_SETTINGS, ENUM_DISPLAY_SETTINGS_MODE, ENUM_REGISTRY_SETTINGS,
             EnumDisplayDevicesW, EnumDisplaySettingsW,
         },
+        UI::WindowsAndMessaging::{
+            EnumWindows, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible, SWP_NOACTIVATE,
+            SWP_NOZORDER, SetWindowPos,
+        },
     },
-    core::PCWSTR,
+    core::{BOOL, PCWSTR},
 };
 
 use crate::model::{DisplayInfo, DisplayMode};
@@ -346,9 +350,110 @@ pub fn switch_mode_persistent(target: &DisplayMode) -> Result<(), String> {
     switch_mode_with_flags(target, CDS_UPDATEREGISTRY | CDS_RESET)
 }
 
+/// 显示器在虚拟桌面上的矩形，返回 `(left, top, width, height)`。
+fn desktop_rect(device_name: &str) -> Option<(i32, i32, i32, i32)> {
+    let mode = read_mode(device_name, ENUM_CURRENT_SETTINGS)?;
+    let position = unsafe { mode.Anonymous1.Anonymous2.dmPosition };
+    Some((
+        position.x,
+        position.y,
+        mode.dmPelsWidth as i32,
+        mode.dmPelsHeight as i32,
+    ))
+}
+
+/// 窗口是否落在这个显示器上、并且比它还大。
+/// 只处理与目标显示器相交的窗口，其它显示器上的窗口与本次切换无关。
+fn window_overflows(window: (i32, i32, i32, i32), screen: (i32, i32, i32, i32)) -> bool {
+    let (window_x, window_y, window_width, window_height) = window;
+    let (screen_x, screen_y, screen_width, screen_height) = screen;
+    let intersects = window_x < screen_x + screen_width
+        && window_x + window_width > screen_x
+        && window_y < screen_y + screen_height
+        && window_y + window_height > screen_y;
+    intersects && (window_width > screen_width || window_height > screen_height)
+}
+
+struct FitTarget {
+    pid: u32,
+    screen: (i32, i32, i32, i32),
+    fitted: bool,
+}
+
+/// 把越出目标显示器的游戏窗口压回显示器边界。
+///
+/// 显示模式切换发生在游戏窗口创建之后时（自动接管必然如此，稳定窗口内重新抢回目标模式
+/// 也一样），Windows 只广播 `WM_DISPLAYCHANGE`，不会替游戏缩小窗口。窗口于是继续保持
+/// 切换前的尺寸，桌面只能显示游戏画面的左上角一块。压回边界后由游戏自己的 `WM_SIZE`
+/// 处理把画面重新铺满。
+///
+/// 幂等：窗口没有越界就什么都不做，所以可以在稳定循环里每秒调用。
+pub fn fit_windows_to_desktop(pid: u32, device_name: &str) -> bool {
+    let Some(screen) = desktop_rect(device_name) else {
+        return false;
+    };
+    let mut target = FitTarget {
+        pid,
+        screen,
+        fitted: false,
+    };
+    unsafe {
+        let _ = EnumWindows(
+            Some(fit_window),
+            LPARAM((&mut target as *mut FitTarget) as isize),
+        );
+    }
+    target.fitted
+}
+
+unsafe extern "system" fn fit_window(window: HWND, parameter: LPARAM) -> BOOL {
+    unsafe {
+        let target = &mut *(parameter.0 as *mut FitTarget);
+        if !IsWindowVisible(window).as_bool() {
+            return true.into();
+        }
+
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(window, Some(&mut pid));
+        if pid != target.pid {
+            return true.into();
+        }
+
+        let mut rect = RECT::default();
+        if GetWindowRect(window, &mut rect).is_err() {
+            return true.into();
+        }
+        let bounds = (
+            rect.left,
+            rect.top,
+            rect.right - rect.left,
+            rect.bottom - rect.top,
+        );
+        if !window_overflows(bounds, target.screen) {
+            return true.into();
+        }
+
+        let (x, y, width, height) = target.screen;
+        if SetWindowPos(
+            window,
+            None,
+            x,
+            y,
+            width,
+            height,
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        )
+        .is_ok()
+        {
+            target.fitted = true;
+        }
+        true.into()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::mode_matches;
+    use super::{mode_matches, window_overflows};
     use crate::model::DisplayMode;
 
     fn mode(device_name: &str, width: u32, height: u32, refresh_rate: u32) -> DisplayMode {
@@ -380,5 +485,21 @@ mod tests {
         let mut wrong_depth = expected.clone();
         wrong_depth.bits_per_pixel = 24;
         assert!(!mode_matches(&wrong_depth, &expected));
+    }
+
+    #[test]
+    fn only_oversized_windows_on_the_target_display_are_fitted() {
+        // 主屏切到 1600x1000，副屏在它右侧保持 1920x1080。
+        let primary = (0, 0, 1600, 1000);
+        let secondary = (1600, 0, 1920, 1080);
+
+        // 切换前按 2560x1600 建好的游戏窗口：这正是桌面被裁掉一块的场景。
+        assert!(window_overflows((0, 0, 2560, 1600), primary));
+        // 已经贴合、或本来就是小窗口的，不能去动它。
+        assert!(!window_overflows((0, 0, 1600, 1000), primary));
+        assert!(!window_overflows((100, 100, 1280, 720), primary));
+        // 副屏上的窗口与主屏这次切换无关，即便它比主屏大也不处理。
+        assert!(!window_overflows((1600, 0, 1920, 1080), primary));
+        assert!(!window_overflows((0, 0, 1600, 1000), secondary));
     }
 }

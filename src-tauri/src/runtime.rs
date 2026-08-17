@@ -212,6 +212,7 @@ impl RuntimeManager {
     pub fn ensure_automatic_target(
         &self,
         game: &GameProfile,
+        pid: Option<u32>,
         app: &AppHandle,
     ) -> Result<bool, String> {
         let generation = self.automatic_generation.load(Ordering::SeqCst);
@@ -219,37 +220,40 @@ impl RuntimeManager {
             return Ok(false);
         }
         let target = target_mode(game);
-        if verify_display_mode(&target).is_ok() {
-            return Ok(true);
+        if verify_display_mode(&target).is_err() {
+            self.set_status(
+                generation,
+                RuntimeStatus {
+                    phase: "switching".to_string(),
+                    profile_id: Some(game.id.clone()),
+                    profile_name: Some(game.name.clone()),
+                    message: "游戏覆盖了显示模式，正在重新应用".to_string(),
+                    can_restore: true,
+                    can_cancel: false,
+                },
+                app,
+            );
+            if let Err(error) = self.apply_target(game, generation) {
+                self.handle_automatic_error(error.clone(), generation, app);
+                return Err(error);
+            }
+            self.set_status(
+                generation,
+                RuntimeStatus {
+                    phase: "running".to_string(),
+                    profile_id: Some(game.id.clone()),
+                    profile_name: Some(game.name.clone()),
+                    message: format!("已自动接管 {}，退出后将恢复桌面", game.name),
+                    can_restore: true,
+                    can_cancel: false,
+                },
+                app,
+            );
         }
-        self.set_status(
-            generation,
-            RuntimeStatus {
-                phase: "switching".to_string(),
-                profile_id: Some(game.id.clone()),
-                profile_name: Some(game.name.clone()),
-                message: "游戏覆盖了显示模式，正在重新应用".to_string(),
-                can_restore: true,
-                can_cancel: false,
-            },
-            app,
-        );
-        if let Err(error) = self.apply_target(game, generation) {
-            self.handle_automatic_error(error.clone(), generation, app);
-            return Err(error);
+        // 自动接管必然发生在游戏窗口创建之后，窗口不会跟着显示模式缩小。
+        if let Some(pid) = pid {
+            display::fit_windows_to_desktop(pid, &game.display_device);
         }
-        self.set_status(
-            generation,
-            RuntimeStatus {
-                phase: "running".to_string(),
-                profile_id: Some(game.id.clone()),
-                profile_name: Some(game.name.clone()),
-                message: format!("已自动接管 {}，退出后将恢复桌面", game.name),
-                can_restore: true,
-                can_cancel: false,
-            },
-            app,
-        );
         Ok(self.is_automatic_generation(generation))
     }
 
@@ -646,9 +650,12 @@ impl RuntimeManager {
             if !self.sleep_while_current(generation, GAME_DISPLAY_STABILIZATION_INTERVAL) {
                 return Ok(false);
             }
-            if process::is_running(&game.process_name) == Some(false) {
-                return Ok(true);
-            }
+            // 一次快照同时拿到存活状态和 pid：外层 None 说明快照不可信，不能当成游戏已退出。
+            let pid = match process::lookup_pid(&game.process_name) {
+                Some(None) => return Ok(true),
+                Some(Some(pid)) => Some(pid),
+                None => None,
+            };
             if verify_display_mode(&target).is_err() {
                 self.update(
                     generation,
@@ -674,6 +681,10 @@ impl RuntimeManager {
                     false,
                     app,
                 );
+            }
+            // 游戏窗口早于本次切换创建时不会自己缩小，会把桌面裁掉一块。
+            if let Some(pid) = pid {
+                display::fit_windows_to_desktop(pid, &game.display_device);
             }
         }
         Ok(true)
