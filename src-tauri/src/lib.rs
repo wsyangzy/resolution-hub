@@ -1,4 +1,3 @@
-mod auto_monitor;
 mod autostart;
 mod detector;
 mod dialog;
@@ -71,11 +70,6 @@ fn set_close_behavior(
 }
 
 #[tauri::command]
-fn set_auto_switch_enabled(enabled: bool, app: tauri::AppHandle) -> Result<AppSettings, String> {
-    tray::set_auto_switch_enabled(&app, enabled)
-}
-
-#[tauri::command]
 fn get_auto_start_enabled() -> Result<bool, String> {
     autostart::is_enabled()
 }
@@ -103,7 +97,6 @@ fn list_profiles() -> Result<Vec<GameProfile>, String> {
 fn save_profile(profile: GameProfile, app: tauri::AppHandle) -> Result<GameProfile, String> {
     let saved = profile::save(profile)?;
     tray::refresh_games(&app);
-    auto_monitor::wake(&app);
     Ok(saved)
 }
 
@@ -111,7 +104,6 @@ fn save_profile(profile: GameProfile, app: tauri::AppHandle) -> Result<GameProfi
 fn delete_profile(id: String, app: tauri::AppHandle) -> Result<(), String> {
     profile::delete(&id)?;
     tray::refresh_games(&app);
-    auto_monitor::wake(&app);
     Ok(())
 }
 
@@ -186,14 +178,6 @@ fn restore_display(
 }
 
 #[tauri::command]
-fn cancel_launch_wait(
-    app: tauri::AppHandle,
-    runtime: State<'_, RuntimeManager>,
-) -> Result<(), String> {
-    runtime.cancel_wait(&app)
-}
-
-#[tauri::command]
 fn win_minimize(window: tauri::Window) -> Result<(), String> {
     match profile::load_settings()?.minimize_behavior {
         MinimizeBehavior::Taskbar => window
@@ -228,26 +212,16 @@ async fn win_close(
 ) -> Result<(), String> {
     let manager = runtime.inner().clone();
     let restore_app = app.clone();
-    let restore_result = tauri::async_runtime::spawn_blocking(move || {
-        auto_monitor::pause(&restore_app);
-        manager.restore_now(&restore_app)
-    })
-    .await;
+    let restore_result =
+        tauri::async_runtime::spawn_blocking(move || manager.restore_now(&restore_app)).await;
 
     match restore_result {
         Ok(Ok(())) => {
-            auto_monitor::stop(&app);
             app.exit(0);
             Ok(())
         }
-        Ok(Err(error)) => {
-            auto_monitor::resume(&app);
-            Err(error)
-        }
-        Err(error) => {
-            auto_monitor::resume(&app);
-            Err(format!("安全退出任务失败：{error}"))
-        }
+        Ok(Err(error)) => Err(error),
+        Err(error) => Err(format!("安全退出任务失败：{error}")),
     }
 }
 
@@ -255,10 +229,8 @@ async fn win_close(
 pub fn run() {
     tauri::Builder::default()
         .manage(RuntimeManager::default())
-        .manage(auto_monitor::AutoMonitor::default())
         .setup(|app| {
             tray::setup(app)?;
-            auto_monitor::start(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -275,7 +247,6 @@ pub fn run() {
             get_settings,
             set_default_display_mode,
             set_close_behavior,
-            set_auto_switch_enabled,
             get_auto_start_enabled,
             set_auto_start_enabled,
             open_project_homepage,
@@ -293,7 +264,6 @@ pub fn run() {
             get_runtime_status,
             get_pending_restore,
             restore_display,
-            cancel_launch_wait,
             win_minimize,
             win_toggle_maximize,
             win_hide,

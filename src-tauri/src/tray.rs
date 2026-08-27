@@ -2,48 +2,31 @@ use std::thread;
 
 use tauri::{
     App, AppHandle, Emitter, Manager, Wry,
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 
-use crate::{
-    model::{AppSettings, RuntimeStatus},
-    profile,
-    runtime::RuntimeManager,
-};
+use crate::{model::RuntimeStatus, profile, runtime::RuntimeManager};
 
 const TRAY_ID: &str = "resolution-hub";
 const MENU_STATUS: &str = "tray-status";
 const MENU_OPEN: &str = "tray-open";
-const MENU_AUTO_SWITCH: &str = "tray-auto-switch";
 const MENU_GAME_PREFIX: &str = "tray-game:";
 const MENU_GAME_EMPTY: &str = "tray-game-empty";
 const MENU_RESTORE: &str = "tray-restore";
 const MENU_EXIT: &str = "tray-exit";
 const MAX_TRAY_GAMES: usize = 5;
-const GAME_INSERT_INDEX: usize = 4;
+const GAME_INSERT_INDEX: usize = 3;
 
 pub struct TrayState {
     menu: Menu<Wry>,
     status_item: MenuItem<Wry>,
-    auto_switch_item: CheckMenuItem<Wry>,
     restore_item: MenuItem<Wry>,
 }
 
 pub fn setup(app: &mut App) -> tauri::Result<()> {
     let status_item = MenuItem::with_id(app, MENU_STATUS, "状态：就绪", false, None::<&str>)?;
     let open_item = MenuItem::with_id(app, MENU_OPEN, "打开 Resolution Hub", true, None::<&str>)?;
-    let auto_switch_enabled = profile::load_settings()
-        .map(|settings| settings.auto_switch_enabled)
-        .unwrap_or(false);
-    let auto_switch_item = CheckMenuItem::with_id(
-        app,
-        MENU_AUTO_SWITCH,
-        "自动接管外部游戏",
-        true,
-        auto_switch_enabled,
-        None::<&str>,
-    )?;
     let games_separator = PredefinedMenuItem::separator(app)?;
     let actions_separator = PredefinedMenuItem::separator(app)?;
     let restore_item = MenuItem::with_id(
@@ -59,7 +42,6 @@ pub fn setup(app: &mut App) -> tauri::Result<()> {
         &[
             &status_item,
             &open_item,
-            &auto_switch_item,
             &games_separator,
             &actions_separator,
             &restore_item,
@@ -76,7 +58,6 @@ pub fn setup(app: &mut App) -> tauri::Result<()> {
             let id = event.id().as_ref();
             match id {
                 MENU_OPEN => show_main_window(app),
-                MENU_AUTO_SWITCH => update_auto_switch_from_tray(app),
                 MENU_RESTORE => restore_from_tray(app.clone()),
                 MENU_EXIT => {
                     show_main_window(app);
@@ -108,7 +89,6 @@ pub fn setup(app: &mut App) -> tauri::Result<()> {
     app.manage(TrayState {
         menu,
         status_item,
-        auto_switch_item,
         restore_item,
     });
     Ok(())
@@ -119,34 +99,6 @@ pub fn show_main_window(app: &AppHandle) {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
-    }
-}
-
-pub fn set_auto_switch_enabled(app: &AppHandle, enabled: bool) -> Result<AppSettings, String> {
-    let settings = profile::save_auto_switch_enabled(enabled)?;
-    if let Some(tray) = app.try_state::<TrayState>() {
-        let _ = tray.auto_switch_item.set_checked(enabled);
-    }
-    crate::auto_monitor::wake(app);
-    let _ = app.emit("settings-changed", settings.clone());
-    Ok(settings)
-}
-
-fn update_auto_switch_from_tray(app: &AppHandle) {
-    let Some(tray) = app.try_state::<TrayState>() else {
-        return;
-    };
-    let requested = tray.auto_switch_item.is_checked().unwrap_or(false);
-    if let Err(error) = set_auto_switch_enabled(app, requested) {
-        if let Ok(settings) = profile::load_settings() {
-            let _ = tray
-                .auto_switch_item
-                .set_checked(settings.auto_switch_enabled);
-        }
-        let _ = app.emit(
-            "tray-action-error",
-            format!("更新自动接管设置失败：{error}"),
-        );
     }
 }
 

@@ -745,41 +745,6 @@ a svg {
   gap: var(--space-3);
 }
 
-.library-auto-switch {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 36px;
-  padding: 0 9px;
-  color: var(--text-secondary);
-  background: var(--surface-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  white-space: nowrap;
-}
-
-.library-auto-switch > span {
-  font-size: var(--text-xs);
-  font-weight: 650;
-}
-
-.library-auto-switch > svg {
-  color: var(--text-muted);
-}
-
-.library-auto-switch[data-enabled="true"] {
-  color: var(--text);
-  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
-}
-
-.library-auto-switch[data-enabled="true"] > svg {
-  color: var(--success);
-}
-
-.library-auto-switch .t-toggle {
-  flex: 0 0 auto;
-}
-
 .profile-grid {
   width: 100%;
   max-width: 940px;

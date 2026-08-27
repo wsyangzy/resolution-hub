@@ -8,26 +8,22 @@ import {
   Pencil,
   Play,
   Plus,
-  Radar,
   Trash2,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 
 import type { GameProfile, RuntimePhase, RuntimeStatus } from "../types";
 import { AppIcon, profileIconFallback, profileIconSource } from "./AppIcon";
-import { MotionSwitch, RuntimeText } from "./ui";
+import { RuntimeText } from "./ui";
 
 export interface GameLibraryProps {
   profiles: GameProfile[];
   runtime: RuntimeStatus;
   loading: boolean;
-  autoSwitchEnabled: boolean;
   onAdd: () => void;
   onEdit: (profile: GameProfile) => void;
   onDelete: (profile: GameProfile, returnFocus?: HTMLElement | null) => void;
   onLaunch: (profile: GameProfile) => void;
-  onAutoSwitchChange: (enabled: boolean) => Promise<void> | void;
-  onAutoSwitchError: (error: unknown) => void;
 }
 
 const RUNTIME_LABELS: Record<RuntimePhase, string> = {
@@ -252,30 +248,12 @@ export function GameLibrary({
   profiles,
   runtime,
   loading,
-  autoSwitchEnabled,
   onAdd,
   onEdit,
   onDelete,
   onLaunch,
-  onAutoSwitchChange,
-  onAutoSwitchError,
 }: GameLibraryProps) {
   const busy = runtime.phase !== "idle" && runtime.phase !== "error";
-  const [autoSwitchSaving, setAutoSwitchSaving] = useState(false);
-
-  const updateAutoSwitch = async (enabled: boolean) => {
-    if (autoSwitchSaving) {
-      return;
-    }
-    setAutoSwitchSaving(true);
-    try {
-      await onAutoSwitchChange(enabled);
-    } catch (error) {
-      onAutoSwitchError(error);
-    } finally {
-      setAutoSwitchSaving(false);
-    }
-  };
 
   return (
     <section className="page game-library-page" aria-labelledby="game-library-title">
@@ -285,16 +263,6 @@ export function GameLibrary({
           <p>共 {profiles.length} 个游戏配置</p>
         </div>
         <div className="game-library-actions">
-          <div className="library-auto-switch" data-enabled={autoSwitchEnabled}>
-            <Radar size={15} aria-hidden="true" />
-            <span>自动接管</span>
-            <MotionSwitch
-              checked={autoSwitchEnabled}
-              disabled={loading || autoSwitchSaving}
-              onCheckedChange={(enabled) => void updateAutoSwitch(enabled)}
-              ariaLabel="自动接管外部启动的游戏"
-            />
-          </div>
           <button type="button" className="button button-primary add-profile-button" onClick={onAdd} disabled={busy}>
             <Plus size={17} aria-hidden="true" />
             <span>添加游戏</span>

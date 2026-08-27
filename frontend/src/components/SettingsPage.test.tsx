@@ -15,13 +15,11 @@ describe("SettingsPage", () => {
     render(
       <SettingsPage
         autoStartEnabled={false}
-        autoSwitchEnabled={false}
         minimizeBehavior="taskbar"
         closeBehavior="hideToTray"
         confirmCloseBehavior={false}
         version="0.1.1"
         onAutoStartChange={vi.fn()}
-        onAutoSwitchChange={vi.fn()}
         onOpenProjectHomepage={vi.fn()}
         onWindowPreferencesChange={vi.fn()}
         onToast={vi.fn()}
@@ -41,13 +39,11 @@ describe("SettingsPage", () => {
     render(
       <SettingsPage
         autoStartEnabled={false}
-        autoSwitchEnabled={false}
         minimizeBehavior="taskbar"
         closeBehavior="hideToTray"
         confirmCloseBehavior={false}
         version="0.1.1"
         onAutoStartChange={vi.fn()}
-        onAutoSwitchChange={vi.fn()}
         onOpenProjectHomepage={onOpenProjectHomepage}
         onWindowPreferencesChange={vi.fn()}
         onToast={vi.fn()}
@@ -65,13 +61,11 @@ describe("SettingsPage", () => {
     render(
       <SettingsPage
         autoStartEnabled={false}
-        autoSwitchEnabled={false}
         minimizeBehavior="taskbar"
         closeBehavior="hideToTray"
         confirmCloseBehavior={false}
         version="0.1.1"
         onAutoStartChange={onAutoStartChange}
-        onAutoSwitchChange={vi.fn()}
         onOpenProjectHomepage={vi.fn()}
         onWindowPreferencesChange={vi.fn()}
         onToast={onToast}
@@ -85,45 +79,17 @@ describe("SettingsPage", () => {
     expect(toggle).not.toBeChecked();
   });
 
-  it("saves the global auto takeover preference", async () => {
-    const user = userEvent.setup();
-    const onAutoSwitchChange = vi.fn().mockResolvedValue(undefined);
-    const onToast = vi.fn();
-    render(
-      <SettingsPage
-        autoStartEnabled={false}
-        autoSwitchEnabled={false}
-        minimizeBehavior="taskbar"
-        closeBehavior="hideToTray"
-        confirmCloseBehavior={true}
-        version="0.1.1"
-        onAutoStartChange={vi.fn()}
-        onAutoSwitchChange={onAutoSwitchChange}
-        onOpenProjectHomepage={vi.fn()}
-        onWindowPreferencesChange={vi.fn()}
-        onToast={onToast}
-      />,
-    );
-
-    await user.click(screen.getByRole("switch", { name: "自动接管外部启动的游戏" }));
-
-    await waitFor(() => expect(onAutoSwitchChange).toHaveBeenCalledWith(true));
-    expect(onToast).toHaveBeenCalledWith("已启用外部游戏自动接管", "success");
-  });
-
   it("saves the two window behavior choices", async () => {
     const user = userEvent.setup();
     const onWindowPreferencesChange = vi.fn();
     render(
       <SettingsPage
         autoStartEnabled={false}
-        autoSwitchEnabled={false}
         minimizeBehavior="taskbar"
         closeBehavior="hideToTray"
         confirmCloseBehavior={true}
         version="0.1.1"
         onAutoStartChange={vi.fn()}
-        onAutoSwitchChange={vi.fn()}
         onOpenProjectHomepage={vi.fn()}
         onWindowPreferencesChange={onWindowPreferencesChange}
         onToast={vi.fn()}
@@ -146,13 +112,11 @@ describe("SettingsPage", () => {
     render(
       <SettingsPage
         autoStartEnabled={false}
-        autoSwitchEnabled={false}
         minimizeBehavior="taskbar"
         closeBehavior="hideToTray"
         confirmCloseBehavior={true}
         version="0.1.1"
         onAutoStartChange={vi.fn()}
-        onAutoSwitchChange={vi.fn()}
         onOpenProjectHomepage={vi.fn()}
         onWindowPreferencesChange={onWindowPreferencesChange}
         onToast={onToast}

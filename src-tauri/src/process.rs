@@ -1,4 +1,4 @@
-use std::{collections::HashMap, mem::size_of, path::PathBuf, thread, time::Duration};
+use std::{mem::size_of, path::PathBuf, thread, time::Duration};
 
 use windows::{
     Win32::{
@@ -13,7 +13,6 @@ use windows::{
                 PROCESS_SYNCHRONIZE, QueryFullProcessImageNameW, WaitForSingleObject,
             },
         },
-        UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
     },
     core::PWSTR,
 };
@@ -108,54 +107,20 @@ pub fn snapshot() -> Vec<ProcessInfo> {
     processes
 }
 
-/// 返回 `None` 表示这次没能拿到可信的进程快照，调用方不得把它当成“没有进程在运行”。
-pub fn running_by_name() -> Option<HashMap<String, Vec<u32>>> {
-    let mut running: HashMap<String, Vec<u32>> = HashMap::new();
-    let (snapshot, mut entry) = open_first_entry()?;
-    unsafe {
-        loop {
-            let process_name = utf16_array(&entry.szExeFile).to_ascii_lowercase();
-            if !process_name.is_empty() {
-                running
-                    .entry(process_name)
-                    .or_default()
-                    .push(entry.th32ProcessID);
-            }
-            if Process32NextW(snapshot, &mut entry).is_err() {
-                break;
-            }
-        }
-        let _ = CloseHandle(snapshot);
-    }
-    Some(running)
-}
-
-pub fn foreground_process_id() -> Option<u32> {
-    unsafe {
-        let window = GetForegroundWindow();
-        if window.0.is_null() {
-            return None;
-        }
-        let mut pid = 0u32;
-        GetWindowThreadProcessId(window, Some(&mut pid));
-        (pid != 0).then_some(pid)
-    }
-}
-
-/// 外层 `None` 表示这次没能拿到可信的进程快照；内层 `None` 表示快照可信但没有这个进程。
-pub fn lookup_pid(process_name: &str) -> Option<Option<u32>> {
+/// 外层 `None` 表示这次没能拿到可信的进程快照；空 `Vec` 表示快照可信但没有这个进程。
+/// 同名进程可能不止一个（多进程架构的游戏），窗口未必挂在第一个上，所以全部返回。
+pub fn lookup_pids(process_name: &str) -> Option<Vec<u32>> {
     let target = process_name.trim().trim_matches('"');
     if target.is_empty() {
-        return Some(None);
+        return Some(Vec::new());
     }
 
     let (snapshot, mut entry) = open_first_entry()?;
     unsafe {
-        let mut found = None;
+        let mut found = Vec::new();
         loop {
             if utf16_array(&entry.szExeFile).eq_ignore_ascii_case(target) {
-                found = Some(entry.th32ProcessID);
-                break;
+                found.push(entry.th32ProcessID);
             }
             if Process32NextW(snapshot, &mut entry).is_err() {
                 break;
@@ -165,6 +130,11 @@ pub fn lookup_pid(process_name: &str) -> Option<Option<u32>> {
         let _ = CloseHandle(snapshot);
         Some(found)
     }
+}
+
+/// 外层 `None` 表示这次没能拿到可信的进程快照；内层 `None` 表示快照可信但没有这个进程。
+pub fn lookup_pid(process_name: &str) -> Option<Option<u32>> {
+    lookup_pids(process_name).map(|pids| pids.first().copied())
 }
 
 pub fn find_pid(process_name: &str) -> Option<u32> {
@@ -207,9 +177,6 @@ pub fn is_any_running<'a>(process_names: impl IntoIterator<Item = &'a str>) -> b
     }
 }
 
-pub fn is_pid_running(pid: u32) -> bool {
-    ProcessExitWaiter::open(pid).is_some_and(|waiter| waiter.wait_timeout(0) == Some(false))
-}
 pub struct ProcessExitWaiter {
     handle: HANDLE,
 }
@@ -245,7 +212,7 @@ impl Drop for ProcessExitWaiter {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProcessExitWaiter, find_pid, is_running, running_by_name};
+    use super::{ProcessExitWaiter, find_pid, is_running, lookup_pids};
 
     #[test]
     fn finds_the_current_process() {
@@ -259,21 +226,21 @@ mod tests {
     }
 
     #[test]
-    fn lightweight_snapshot_groups_process_ids_by_name() {
+    fn lookup_returns_every_process_id_sharing_the_name() {
         let executable = std::env::current_exe().expect("current executable should exist");
         let process_name = executable
             .file_name()
             .and_then(|name| name.to_str())
-            .expect("current executable should have a file name")
-            .to_ascii_lowercase();
+            .expect("current executable should have a file name");
 
         // 快照成功必须返回 Some；把失败退化成空表会让调用方误判游戏已退出。
-        let running =
-            running_by_name().expect("process snapshot should be retried until it succeeds");
-        assert!(
-            running
-                .get(&process_name)
-                .is_some_and(|pids| pids.contains(&std::process::id()))
+        // 窗口未必挂在第一个同名进程上，所以贴合逻辑依赖这里返回全部 pid。
+        let pids = lookup_pids(process_name)
+            .expect("process snapshot should be retried until it succeeds");
+        assert!(pids.contains(&std::process::id()));
+        assert_eq!(
+            lookup_pids("resolution-hub-no-such-process.exe"),
+            Some(Vec::new())
         );
     }
 

@@ -32,7 +32,6 @@ const runtime: RuntimeStatus = {
   profileName: null,
   message: "就绪",
   canRestore: false,
-  canCancel: false,
 };
 
 const modes: DisplayMode[] = [
@@ -67,7 +66,6 @@ describe("DisplaysPage", () => {
       minimizeBehavior: "taskbar",
       closeBehavior: "exit",
       confirmCloseBehavior: false,
-      autoSwitchEnabled: false,
     };
     vi.mocked(tauriApi.setDefaultDisplayMode).mockResolvedValue(nextSettings);
     const onSettingsChange = vi.fn();
@@ -81,8 +79,7 @@ describe("DisplaysPage", () => {
           minimizeBehavior: "taskbar",
           closeBehavior: "exit",
           confirmCloseBehavior: false,
-          autoSwitchEnabled: false,
-        }}
+            }}
         runtime={runtime}
         loading={false}
         onSettingsChange={onSettingsChange}
@@ -109,8 +106,7 @@ describe("DisplaysPage", () => {
           minimizeBehavior: "taskbar",
           closeBehavior: "exit",
           confirmCloseBehavior: false,
-          autoSwitchEnabled: false,
-        }}
+            }}
         runtime={{ ...runtime, phase: "running", message: "游戏运行中" }}
         loading={false}
         onSettingsChange={vi.fn()}

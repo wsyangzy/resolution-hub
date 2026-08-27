@@ -314,8 +314,6 @@ export const tauriApi = {
     confirmCloseBehavior,
     minimizeBehavior,
   }),
-  setAutoSwitchEnabled: (enabled: boolean) =>
-    invoke<AppSettings>("set_auto_switch_enabled", { enabled }),
   openProjectHomepage: () => invoke<void>("open_project_homepage"),
   getAutoStartEnabled: () => invoke<boolean>("get_auto_start_enabled"),
   setAutoStartEnabled: (enabled: boolean) =>
@@ -346,7 +344,6 @@ export const tauriApi = {
   getPendingRestore: () =>
     invoke<PendingRestore | null>("get_pending_restore"),
   restoreDisplay: () => invoke<void>("restore_display"),
-  cancelLaunchWait: () => invoke<void>("cancel_launch_wait"),
   minimize: () => invoke<void>("win_minimize"),
   toggleMaximize: () => invoke<void>("win_toggle_maximize"),
   hide: () => invoke<void>("win_hide"),
@@ -360,6 +357,4 @@ export const tauriApi = {
     listen<void>("tray-exit-requested", handler),
   listenTrayActionError: (handler: (message: string) => void) =>
     listen<string>("tray-action-error", ({ payload }) => handler(payload)),
-  listenSettingsChanged: (handler: (settings: AppSettings) => void) =>
-    listen<AppSettings>("settings-changed", ({ payload }) => handler(payload)),
 };

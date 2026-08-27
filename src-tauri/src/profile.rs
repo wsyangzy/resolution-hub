@@ -273,13 +273,6 @@ pub fn save_close_behavior(
     Ok(settings)
 }
 
-pub fn save_auto_switch_enabled(enabled: bool) -> Result<AppSettings, String> {
-    let mut settings = load_settings()?;
-    settings.auto_switch_enabled = enabled;
-    save_settings(&settings)?;
-    Ok(settings)
-}
-
 pub fn default_display_mode(device_name: &str) -> Result<Option<DisplayMode>, String> {
     Ok(load_settings()?
         .default_display_modes

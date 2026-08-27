@@ -22,7 +22,6 @@ const profile: GameProfile = {
   launcherProvider: "",
   launcherProcessName: "",
   processName: "test.exe",
-  autoSwitch: true,
   switchTiming: "beforeLaunch",
   launchTimeoutSec: 600,
   displayDevice: "DISPLAY1",
@@ -38,7 +37,6 @@ const idle: RuntimeStatus = {
   profileName: null,
   message: "就绪",
   canRestore: false,
-  canCancel: false,
 };
 
 function renderLibrary(runtime: RuntimeStatus) {
@@ -47,13 +45,10 @@ function renderLibrary(runtime: RuntimeStatus) {
       profiles={[profile]}
       runtime={runtime}
       loading={false}
-      autoSwitchEnabled={false}
       onAdd={vi.fn()}
       onEdit={vi.fn()}
       onDelete={vi.fn()}
       onLaunch={vi.fn()}
-      onAutoSwitchChange={vi.fn()}
-      onAutoSwitchError={vi.fn()}
     />,
   );
 }

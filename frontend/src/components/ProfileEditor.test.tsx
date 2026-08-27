@@ -44,7 +44,6 @@ const profile: GameProfile = {
   launcherProvider: "",
   launcherProcessName: "",
   processName: "game.exe",
-  autoSwitch: true,
   switchTiming: "beforeLaunch",
   launchTimeoutSec: 600,
   displayDevice: "DISPLAY1",
@@ -117,10 +116,6 @@ describe("ProfileEditor", () => {
     const restoreDelay = screen.getByLabelText(/退出后恢复延迟/) as HTMLInputElement;
     expect(timeout).toHaveValue(10);
     expect(restoreDelay).toHaveValue(2);
-    const autoSwitch = screen.getByRole("switch", { name: "允许自动接管该游戏" });
-    expect(autoSwitch).toBeChecked();
-    await user.click(autoSwitch);
-
     await user.clear(timeout);
     await user.type(timeout, "3");
     await user.clear(restoreDelay);
@@ -131,7 +126,6 @@ describe("ProfileEditor", () => {
     expect(onSave.mock.calls[0]?.[0]).toMatchObject({
       launchTimeoutSec: 180,
       restoreDelayMs: 4000,
-      autoSwitch: false,
     });
   });
 

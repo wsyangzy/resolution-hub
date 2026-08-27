@@ -98,7 +98,6 @@ const IDLE_RUNTIME: RuntimeStatus = {
   profileName: null,
   message: "就绪",
   canRestore: false,
-  canCancel: false,
 };
 
 const INITIAL_STATE: AppState = {
@@ -109,7 +108,6 @@ const INITIAL_STATE: AppState = {
     minimizeBehavior: "taskbar",
     closeBehavior: "hideToTray",
     confirmCloseBehavior: true,
-    autoSwitchEnabled: false,
   },
   runtime: IDLE_RUNTIME,
   pendingRestore: null,
@@ -460,13 +458,16 @@ export default function App() {
     });
   }, [openConfirm, restoreDesktop]);
 
-  const cancelWait = useCallback(async () => {
-    try {
-      await tauriApi.cancelLaunchWait();
-    } catch (error) {
-      showError(error);
-    }
-  }, [showError]);
+  // 结束会话就是停止监控 + 恢复桌面，守候阶段没有恢复点时恢复本身是空操作。
+  const endSession = useCallback(() => {
+    openConfirm({
+      title: "结束当前会话？",
+      description: "将停止监控该游戏并恢复桌面显示模式，已经在运行的游戏不会被关闭。",
+      confirmLabel: "结束会话",
+      tone: "warning",
+      onConfirm: restoreDesktop,
+    });
+  }, [openConfirm, restoreDesktop]);
 
   const exitNow = useCallback(async () => {
     tauriApi.setWindowSizePersistenceSuspended(true);
@@ -599,9 +600,6 @@ export default function App() {
     attach(tauriApi.listenWindowCloseRequested(() => closeWindowRef.current()));
     attach(tauriApi.listenTrayExitRequested(() => requestExitRef.current()));
     attach(tauriApi.listenTrayActionError(showError));
-    attach(tauriApi.listenSettingsChanged((settings) => {
-      dispatch({ type: "settings", value: settings });
-    }));
     return () => {
       active = false;
       releases.forEach((release) => release());
@@ -619,21 +617,6 @@ export default function App() {
       throw error;
     }
   }, [state.autoStartEnabled]);
-
-  const updateAutoSwitch = useCallback(async (enabled: boolean) => {
-    const previous = state.settings;
-    dispatch({
-      type: "settings",
-      value: { ...previous, autoSwitchEnabled: enabled },
-    });
-    try {
-      const saved = await tauriApi.setAutoSwitchEnabled(enabled);
-      dispatch({ type: "settings", value: saved });
-    } catch (error) {
-      dispatch({ type: "settings", value: previous });
-      throw error;
-    }
-  }, [state.settings]);
 
   const pageTitle = runtimeBusy
     ? state.runtime.profileName ?? "游戏运行中"
@@ -713,8 +696,7 @@ export default function App() {
             <RunningPage
               runtime={state.runtime}
               profile={runningProfile}
-              onCancel={() => void cancelWait()}
-              onRestore={requestRestore}
+              onEnd={endSession}
             />
           </div>
         ) : workspace === "library" ? (
@@ -728,13 +710,10 @@ export default function App() {
                 profiles={state.profiles}
                 runtime={state.runtime}
                 loading={state.loading}
-                autoSwitchEnabled={state.settings.autoSwitchEnabled}
                 onAdd={() => openEditor(null)}
                 onEdit={(profile) => openEditor(profile)}
                 onDelete={deleteProfile}
                 onLaunch={(profile) => void launchProfile(profile)}
-                onAutoSwitchChange={updateAutoSwitch}
-                onAutoSwitchError={showError}
               />
             </div>
             <div className="t-page page-scroll" data-page-id="2" aria-hidden={!editorOpen}>
@@ -768,13 +747,11 @@ export default function App() {
           <div className="page-scroll t-view-enter" key="settings">
             <SettingsPage
               autoStartEnabled={state.autoStartEnabled}
-              autoSwitchEnabled={state.settings.autoSwitchEnabled}
               minimizeBehavior={state.settings.minimizeBehavior}
               closeBehavior={state.settings.closeBehavior}
               confirmCloseBehavior={state.settings.confirmCloseBehavior}
               version={state.version}
               onAutoStartChange={updateAutoStart}
-              onAutoSwitchChange={updateAutoSwitch}
               onOpenProjectHomepage={tauriApi.openProjectHomepage}
               onWindowPreferencesChange={saveWindowPreferences}
               onToast={showToast}

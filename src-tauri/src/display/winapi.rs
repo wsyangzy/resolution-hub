@@ -234,37 +234,6 @@ pub fn enumerate_displays() -> Result<Vec<DisplayInfo>, String> {
     }
 }
 
-/// 只枚举当前活动显示器的设备名。自动接管每次轮询都要用它来筛掉目标显示器
-/// 已经不存在的配置，所以刻意不读 friendly name 和当前模式。
-/// 返回空集合表示这次枚举不可信，调用方不得据此认为“没有任何显示器”。
-pub fn active_device_names() -> HashSet<String> {
-    let mut names = HashSet::new();
-    let mut index = 0;
-
-    loop {
-        let mut device = DISPLAY_DEVICEW {
-            cb: size_of::<DISPLAY_DEVICEW>() as u32,
-            ..Default::default()
-        };
-
-        let ok = unsafe { EnumDisplayDevicesW(PCWSTR::null(), index, &mut device, 0) };
-        if !ok.as_bool() {
-            break;
-        }
-        index += 1;
-
-        if device.StateFlags.0 & DISPLAY_DEVICE_ACTIVE.0 == 0 {
-            continue;
-        }
-        let device_name = utf16_array(&device.DeviceName);
-        if !device_name.trim().is_empty() {
-            names.insert(device_name);
-        }
-    }
-
-    names
-}
-
 pub fn enumerate_modes(device_name: &str) -> Result<Vec<DisplayMode>, String> {
     let mut modes = Vec::new();
     let mut seen = HashSet::new();

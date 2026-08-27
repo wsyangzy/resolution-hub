@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import { tauriApi } from "./lib/tauri";
-import type { AppSettings, GameProfile, RuntimeStatus } from "./types";
+import type { GameProfile, RuntimeStatus } from "./types";
 
 vi.mock("./lib/tauri", () => ({
   tauriApi: {
@@ -13,7 +13,6 @@ vi.mock("./lib/tauri", () => ({
     getSettings: vi.fn(),
     setDefaultDisplayMode: vi.fn(),
     setCloseBehavior: vi.fn(),
-    setAutoSwitchEnabled: vi.fn(),
     openProjectHomepage: vi.fn(),
     getAutoStartEnabled: vi.fn(),
     setAutoStartEnabled: vi.fn(),
@@ -31,7 +30,6 @@ vi.mock("./lib/tauri", () => ({
     getRuntimeStatus: vi.fn(),
     getPendingRestore: vi.fn(),
     restoreDisplay: vi.fn(),
-    cancelLaunchWait: vi.fn(),
     ensureWindowSize: vi.fn(),
     settleWindowSizeAfterDisplayChange: vi.fn(),
     setWindowSizePersistenceSuspended: vi.fn(),
@@ -44,7 +42,6 @@ vi.mock("./lib/tauri", () => ({
     listenWindowCloseRequested: vi.fn(),
     listenTrayExitRequested: vi.fn(),
     listenTrayActionError: vi.fn(),
-    listenSettingsChanged: vi.fn(),
   },
 }));
 
@@ -69,7 +66,6 @@ const idle: RuntimeStatus = {
   profileName: null,
   message: "就绪",
   canRestore: false,
-  canCancel: false,
 };
 
 const profile: GameProfile = {
@@ -84,7 +80,6 @@ const profile: GameProfile = {
   launcherProvider: "",
   launcherProcessName: "",
   processName: "test.exe",
-  autoSwitch: true,
   switchTiming: "beforeLaunch",
   launchTimeoutSec: 600,
   displayDevice: "DISPLAY1",
@@ -98,12 +93,10 @@ let runtimeHandler: ((status: RuntimeStatus) => void) | undefined;
 let windowCloseHandler: (() => void) | undefined;
 let trayExitHandler: (() => void) | undefined;
 let trayActionErrorHandler: ((message: string) => void) | undefined;
-let settingsChangedHandler: ((settings: AppSettings) => void) | undefined;
 const runtimeUnlistenSpy = vi.fn<() => void>();
 const windowUnlistenSpy = vi.fn<() => void>();
 const trayUnlistenSpy = vi.fn<() => void>();
 const trayActionErrorUnlistenSpy = vi.fn<() => void>();
-const settingsChangedUnlistenSpy = vi.fn<() => void>();
 
 function resetApi() {
   vi.clearAllMocks();
@@ -111,12 +104,10 @@ function resetApi() {
   windowCloseHandler = undefined;
   trayExitHandler = undefined;
   trayActionErrorHandler = undefined;
-  settingsChangedHandler = undefined;
   runtimeUnlistenSpy.mockReset();
   windowUnlistenSpy.mockReset();
   trayUnlistenSpy.mockReset();
   trayActionErrorUnlistenSpy.mockReset();
-  settingsChangedUnlistenSpy.mockReset();
   vi.mocked(tauriApi.enumerateDisplays).mockResolvedValue([display]);
   vi.mocked(tauriApi.enumerateDisplayModes).mockResolvedValue([mode]);
   vi.mocked(tauriApi.getSettings).mockResolvedValue({
@@ -124,7 +115,6 @@ function resetApi() {
     minimizeBehavior: "taskbar",
     closeBehavior: "hideToTray",
     confirmCloseBehavior: true,
-    autoSwitchEnabled: false,
   });
   vi.mocked(tauriApi.setCloseBehavior).mockImplementation(async (
     closeBehavior,
@@ -135,17 +125,9 @@ function resetApi() {
     minimizeBehavior,
     closeBehavior,
     confirmCloseBehavior,
-    autoSwitchEnabled: false,
   }));
   vi.mocked(tauriApi.getAutoStartEnabled).mockResolvedValue(false);
   vi.mocked(tauriApi.setAutoStartEnabled).mockImplementation(async (enabled) => enabled);
-  vi.mocked(tauriApi.setAutoSwitchEnabled).mockImplementation(async (enabled) => ({
-    defaultDisplayModes: [mode],
-    minimizeBehavior: "taskbar",
-    closeBehavior: "hideToTray",
-    confirmCloseBehavior: true,
-    autoSwitchEnabled: enabled,
-  }));
   vi.mocked(tauriApi.openProjectHomepage).mockResolvedValue(undefined);
   vi.mocked(tauriApi.listProfiles).mockResolvedValue([]);
   vi.mocked(tauriApi.saveProfile).mockImplementation(async (value) => value);
@@ -155,7 +137,6 @@ function resetApi() {
   vi.mocked(tauriApi.getRuntimeStatus).mockResolvedValue(idle);
   vi.mocked(tauriApi.getPendingRestore).mockResolvedValue(null);
   vi.mocked(tauriApi.restoreDisplay).mockResolvedValue(undefined);
-  vi.mocked(tauriApi.cancelLaunchWait).mockResolvedValue(undefined);
   vi.mocked(tauriApi.ensureWindowSize).mockResolvedValue(undefined);
   vi.mocked(tauriApi.settleWindowSizeAfterDisplayChange).mockResolvedValue(undefined);
   vi.mocked(tauriApi.minimize).mockResolvedValue(undefined);
@@ -178,10 +159,6 @@ function resetApi() {
   vi.mocked(tauriApi.listenTrayActionError).mockImplementation(async (handler) => {
     trayActionErrorHandler = handler;
     return trayActionErrorUnlistenSpy;
-  });
-  vi.mocked(tauriApi.listenSettingsChanged).mockImplementation(async (handler) => {
-    settingsChangedHandler = handler;
-    return settingsChangedUnlistenSpy;
   });
 }
 
@@ -279,21 +256,10 @@ describe("App controller", () => {
       profileId: "game-1",
       profileName: "Test Game",
       message: "等待游戏进程",
-      canCancel: true,
     }));
     act(() => runtimeHandler?.({ ...idle, message: "已取消等待" }));
     act(() => trayActionErrorHandler?.("托盘快捷启动失败"));
     expect(await screen.findByText("托盘快捷启动失败")).toBeVisible();
-
-    const autoSwitch = screen.getByRole("switch", { name: "自动接管外部启动的游戏" });
-    act(() => settingsChangedHandler?.({
-      defaultDisplayModes: [mode],
-      minimizeBehavior: "taskbar",
-      closeBehavior: "hideToTray",
-      confirmCloseBehavior: true,
-      autoSwitchEnabled: true,
-    }));
-    expect(autoSwitch).toBeChecked();
 
     await waitFor(() => {
       expect(tauriApi.settleWindowSizeAfterDisplayChange).toHaveBeenCalledOnce();
@@ -306,7 +272,6 @@ describe("App controller", () => {
     expect(windowUnlistenSpy).toHaveBeenCalledTimes(1);
     expect(trayUnlistenSpy).toHaveBeenCalledTimes(1);
     expect(trayActionErrorUnlistenSpy).toHaveBeenCalledTimes(1);
-    expect(settingsChangedUnlistenSpy).toHaveBeenCalledTimes(1);
   });
 
   it("normalizes the logical window size after the display switch completes", async () => {
@@ -371,8 +336,7 @@ describe("App controller", () => {
       minimizeBehavior: "taskbar",
       closeBehavior: "hideToTray",
       confirmCloseBehavior: false,
-      autoSwitchEnabled: false,
-    });
+      });
     render(<App />);
     await screen.findByRole("button", { name: "添加第一个游戏" });
 
@@ -388,8 +352,7 @@ describe("App controller", () => {
       minimizeBehavior: "taskbar",
       closeBehavior: "hideToTray",
       confirmCloseBehavior: false,
-      autoSwitchEnabled: false,
-    });
+      });
     render(<App />);
     await screen.findByRole("button", { name: "添加第一个游戏" });
 
@@ -441,8 +404,7 @@ describe("App controller", () => {
       minimizeBehavior: "taskbar",
       closeBehavior: "exit",
       confirmCloseBehavior: false,
-      autoSwitchEnabled: false,
-    });
+      });
     vi.mocked(tauriApi.getPendingRestore).mockResolvedValue({
       profileName: "Test Game",
       mode,
@@ -467,18 +429,6 @@ describe("App controller", () => {
     expect(screen.getByRole("alertdialog")).toHaveTextContent("显示器拒绝恢复");
   });
 
-  it("toggles automatic takeover from the game library", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-    await screen.findByRole("button", { name: "添加第一个游戏" });
-
-    const toggle = screen.getByRole("switch", { name: "自动接管外部启动的游戏" });
-    await user.click(toggle);
-
-    await waitFor(() => expect(tauriApi.setAutoSwitchEnabled).toHaveBeenCalledWith(true));
-    expect(toggle).toBeChecked();
-  });
-
   it("rolls back the controlled autostart switch when persistence fails", async () => {
     const user = userEvent.setup();
     vi.mocked(tauriApi.setAutoStartEnabled).mockRejectedValue(new Error("注册表写入失败"));
@@ -490,19 +440,6 @@ describe("App controller", () => {
 
     await waitFor(() => expect(toggle).not.toBeChecked());
     expect(screen.getByRole("alert")).toHaveTextContent("注册表写入失败");
-  });
-
-  it("rolls back the auto takeover switch when persistence fails", async () => {
-    const user = userEvent.setup();
-    vi.mocked(tauriApi.setAutoSwitchEnabled).mockRejectedValue(new Error("设置文件写入失败"));
-    render(<App />);
-
-    await user.click(screen.getByRole("button", { name: "应用设置" }));
-    const toggle = await screen.findByRole("switch", { name: "自动接管外部启动的游戏" });
-    await user.click(toggle);
-
-    await waitFor(() => expect(toggle).not.toBeChecked());
-    expect(screen.getByRole("alert")).toHaveTextContent("设置文件写入失败");
   });
 
   it("does not show a routine success toast", async () => {
@@ -539,6 +476,7 @@ describe("App controller", () => {
   });
 
   it("shows the running game on a focused page and locks navigation", async () => {
+    const user = userEvent.setup();
     vi.mocked(tauriApi.listProfiles).mockResolvedValue([profile]);
     vi.mocked(tauriApi.getRuntimeStatus).mockResolvedValue({
       ...idle,
@@ -561,6 +499,11 @@ describe("App controller", () => {
     }
     // 会话操作改由专注页承担，底部状态栏不再重复渲染它们。
     expect(document.querySelector(".safety-actions button")).toBeNull();
-    expect(screen.getByRole("button", { name: "立即恢复" })).toHaveClass("button-warning");
+
+    // 会话是守护式的，游戏可以反复启停，所以专注页只提供「结束会话」这一个出口。
+    await user.click(screen.getByRole("button", { name: "结束会话" }));
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent("结束当前会话？");
+    await user.click(screen.getByRole("button", { name: "结束会话" }));
+    await waitFor(() => expect(tauriApi.restoreDisplay).toHaveBeenCalledTimes(1));
   });
 });
