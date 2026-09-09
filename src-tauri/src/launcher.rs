@@ -157,10 +157,31 @@ fn launch_executable_parts(
         command.current_dir(parent);
     }
     command.args(parse_arguments(arguments));
-    command
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("启动游戏失败：{e}"))
+    match command.spawn() {
+        Ok(_) => Ok(()),
+        Err(error) if error.raw_os_error() == Some(740) => {
+            let target = wide(&executable.to_string_lossy());
+            let parameters = wide(arguments.trim());
+            let directory = working_directory_for(executable, configured_directory);
+            let directory = wide(&directory.to_string_lossy());
+            shell_execute_with_operation(
+                "runas",
+                &target,
+                PCWSTR(parameters.as_ptr()),
+                PCWSTR(directory.as_ptr()),
+                "启动游戏失败",
+            )
+        }
+        Err(error) => Err(format!("启动游戏失败：{error}")),
+    }
+}
+
+fn working_directory_for<'a>(executable: &'a Path, configured: &'a Path) -> &'a Path {
+    if !configured.as_os_str().is_empty() && configured.is_dir() {
+        configured
+    } else {
+        executable.parent().unwrap_or_else(|| Path::new("."))
+    }
 }
 
 fn launch_steam(app_id: &str) -> Result<(), String> {
@@ -194,7 +215,17 @@ fn shell_execute(
     working_directory: PCWSTR,
     error_message: &str,
 ) -> Result<(), String> {
-    let operation = wide("open");
+    shell_execute_with_operation("open", target, parameters, working_directory, error_message)
+}
+
+fn shell_execute_with_operation(
+    operation: &str,
+    target: &[u16],
+    parameters: PCWSTR,
+    working_directory: PCWSTR,
+    error_message: &str,
+) -> Result<(), String> {
+    let operation = wide(operation);
     let result = unsafe {
         ShellExecuteW(
             None,

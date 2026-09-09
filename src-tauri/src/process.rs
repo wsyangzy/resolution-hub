@@ -2,7 +2,7 @@ use std::{mem::size_of, path::PathBuf, thread, time::Duration};
 
 use windows::{
     Win32::{
-        Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT},
+        Foundation::{CloseHandle, HANDLE},
         System::{
             Diagnostics::ToolHelp::{
                 CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
@@ -10,7 +10,7 @@ use windows::{
             },
             Threading::{
                 OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-                PROCESS_SYNCHRONIZE, QueryFullProcessImageNameW, WaitForSingleObject,
+                QueryFullProcessImageNameW,
             },
         },
     },
@@ -141,12 +141,6 @@ pub fn find_pid(process_name: &str) -> Option<u32> {
     lookup_pid(process_name).flatten()
 }
 
-/// 返回 `None` 表示这次没能拿到可信的进程快照。调用方不得把它当成“进程已退出”，
-/// 否则会在系统繁忙时提前恢复桌面显示模式并把控制权交还给自动监控，形成切换震荡。
-pub fn is_running(process_name: &str) -> Option<bool> {
-    lookup_pid(process_name).map(|pid| pid.is_some())
-}
-
 pub fn is_any_running<'a>(process_names: impl IntoIterator<Item = &'a str>) -> bool {
     let targets: Vec<String> = process_names
         .into_iter()
@@ -177,42 +171,9 @@ pub fn is_any_running<'a>(process_names: impl IntoIterator<Item = &'a str>) -> b
     }
 }
 
-pub struct ProcessExitWaiter {
-    handle: HANDLE,
-}
-
-impl ProcessExitWaiter {
-    pub fn open(pid: u32) -> Option<Self> {
-        if pid == 0 {
-            return None;
-        }
-        let handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid) }.ok()?;
-        Some(Self { handle })
-    }
-
-    pub fn wait_timeout(&self, timeout_ms: u32) -> Option<bool> {
-        let result = unsafe { WaitForSingleObject(self.handle, timeout_ms) };
-        if result == WAIT_OBJECT_0 {
-            Some(true)
-        } else if result == WAIT_TIMEOUT {
-            Some(false)
-        } else {
-            None
-        }
-    }
-}
-
-impl Drop for ProcessExitWaiter {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.handle);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{ProcessExitWaiter, find_pid, is_running, lookup_pids};
+    use super::{find_pid, lookup_pids};
 
     #[test]
     fn finds_the_current_process() {
@@ -242,29 +203,5 @@ mod tests {
             lookup_pids("resolution-hub-no-such-process.exe"),
             Some(Vec::new())
         );
-    }
-
-    #[test]
-    fn a_missing_process_is_distinguishable_from_a_failed_snapshot() {
-        let executable = std::env::current_exe().expect("current executable should exist");
-        let process_name = executable
-            .file_name()
-            .and_then(|name| name.to_str())
-            .expect("current executable should have a file name");
-
-        // Some(false) 才代表“快照可信且进程确实不在”。调用方必须能把它和
-        // None（快照不可信）区分开，否则会在系统繁忙时误判游戏已退出。
-        assert_eq!(is_running(process_name), Some(true));
-        assert_eq!(
-            is_running("resolution-hub-no-such-process.exe"),
-            Some(false)
-        );
-    }
-
-    #[test]
-    fn current_process_is_not_signaled() {
-        let waiter = ProcessExitWaiter::open(std::process::id())
-            .expect("current process should be waitable");
-        assert_eq!(waiter.wait_timeout(0), Some(false));
     }
 }

@@ -39,7 +39,6 @@ const GAME_WINDOW_FIT_LIMIT: usize = 6;
 const GAME_WINDOW_FIT_SETTLED_SCANS: usize = 5;
 const PROCESS_DETECTION_INTERVAL: Duration = Duration::from_millis(500);
 const PROCESS_HANDOFF_GRACE_PERIOD: Duration = Duration::from_secs(3);
-const PROCESS_FALLBACK_INTERVAL: Duration = Duration::from_secs(2);
 const CANCELLABLE_SLEEP_SLICE: Duration = Duration::from_millis(100);
 
 #[derive(Clone)]
@@ -163,7 +162,7 @@ impl RuntimeManager {
         generation: u64,
         app: &AppHandle,
     ) -> Result<(), String> {
-        let Some(mut game_pid) = self.start_first_round(game, generation, app)? else {
+        let Some(_) = self.start_first_round(game, generation, app)? else {
             return Ok(());
         };
 
@@ -178,7 +177,7 @@ impl RuntimeManager {
             if !self.stabilize_target_mode(game, generation, app)? {
                 return Ok(());
             }
-            if !self.wait_for_exit(game, game_pid, generation)? {
+            if !self.wait_for_exit(game, generation)? {
                 return Ok(());
             }
 
@@ -206,7 +205,7 @@ impl RuntimeManager {
                 false,
                 app,
             );
-            let Some(next_pid) = self.wait_for_process(game, generation, None)? else {
+            let Some(_) = self.wait_for_process(game, generation, None)? else {
                 return Ok(());
             };
             self.update(
@@ -220,7 +219,6 @@ impl RuntimeManager {
             if !self.is_current(generation) {
                 return Ok(());
             }
-            game_pid = next_pid;
         }
     }
 
@@ -334,42 +332,30 @@ impl RuntimeManager {
     }
 
     /// 等游戏进程退出，`Ok(false)` 表示会话已被取代。
-    fn wait_for_exit(&self, game: &GameProfile, pid: u32, generation: u64) -> Result<bool, String> {
-        let mut game_pid = Some(pid);
-        let mut use_polling_fallback = false;
-        while let Some(pid) = game_pid {
-            let Some(waiter) = process::ProcessExitWaiter::open(pid) else {
-                use_polling_fallback = true;
-                break;
-            };
-            loop {
-                if !self.is_current(generation) {
-                    return Ok(false);
-                }
-                match waiter.wait_timeout(1_000) {
-                    Some(true) => break,
-                    Some(false) => continue,
-                    None => {
-                        use_polling_fallback = true;
-                        break;
-                    }
-                }
-            }
-            if use_polling_fallback {
-                break;
-            }
-            game_pid = self.find_process_during_grace_period(
-                &game.process_name,
-                generation,
-                PROCESS_HANDOFF_GRACE_PERIOD,
-            );
-        }
-        while use_polling_fallback && process::is_running(&game.process_name) != Some(false) {
-            if !self.sleep_while_current(generation, PROCESS_FALLBACK_INTERVAL) {
+    fn wait_for_exit(&self, game: &GameProfile, generation: u64) -> Result<bool, String> {
+        let mut gone_since = None;
+        loop {
+            if !self.is_current(generation) {
                 return Ok(false);
             }
+
+            match process::lookup_pids(&game.process_name) {
+                Some(pids) if !pids.is_empty() => {
+                    gone_since = None;
+                }
+                Some(_) => {
+                    let first_missing = gone_since.get_or_insert_with(Instant::now);
+                    if first_missing.elapsed() >= PROCESS_HANDOFF_GRACE_PERIOD {
+                        return Ok(true);
+                    }
+                }
+                None => {
+                    // 快照失败不能当成退出，否则系统繁忙时会提前恢复分辨率。
+                }
+            }
+
+            thread::sleep(PROCESS_DETECTION_INTERVAL);
         }
-        Ok(true)
     }
 
     fn switch_to_target(&self, game: &GameProfile, generation: u64) -> Result<(), String> {
@@ -554,28 +540,6 @@ impl RuntimeManager {
             thread::sleep(remaining.min(CANCELLABLE_SLEEP_SLICE));
         }
         false
-    }
-
-    fn find_process_during_grace_period(
-        &self,
-        process_name: &str,
-        generation: u64,
-        duration: Duration,
-    ) -> Option<u32> {
-        let deadline = Instant::now() + duration;
-        loop {
-            if !self.is_current(generation) {
-                return None;
-            }
-            if let Some(pid) = process::find_pid(process_name) {
-                return Some(pid);
-            }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return None;
-            }
-            thread::sleep(remaining.min(PROCESS_DETECTION_INTERVAL));
-        }
     }
 
     fn update(
