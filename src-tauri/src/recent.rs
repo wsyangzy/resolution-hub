@@ -28,6 +28,7 @@ pub fn list() -> Vec<RecentApplication> {
         .lock()
         .map(|items| items.clone())
         .unwrap_or_default();
+    applications.retain(|item| !should_ignore(&item.process_name, Path::new(&item.executable)));
     applications.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
     applications.truncate(40);
     applications
@@ -143,6 +144,7 @@ fn should_ignore(process_name: &str, executable: &Path) -> bool {
         "applicationframehost.exe",
         "explorer.exe",
         "resolution-hub.exe",
+        "resolution-hub-native-ui.exe",
         "searchhost.exe",
         "shellexperiencehost.exe",
         "startmenuexperiencehost.exe",
@@ -180,5 +182,23 @@ unsafe extern "system" fn enum_window(window: HWND, parameter: LPARAM) -> BOOL {
         let windows = &mut *(parameter.0 as *mut Vec<(u32, String)>);
         windows.push((pid, String::from_utf16_lossy(&title[..length as usize])));
         true.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recent_sources_exclude_both_hub_windows_but_keep_games() {
+        assert!(should_ignore(
+            "Resolution-Hub-Native-UI.exe",
+            Path::new(r"C:\Apps\resolution-hub-native-ui.exe")
+        ));
+        assert!(should_ignore(
+            "resolution-hub.exe",
+            Path::new(r"C:\Apps\resolution-hub.exe")
+        ));
+        assert!(!should_ignore("game.exe", Path::new(r"C:\Games\game.exe")));
     }
 }

@@ -1,3 +1,7 @@
 [workspace]
-members = ["src-tauri"]
+members = ["src-tauri", "native-ui"]
 resolver = "2"
+
+# 原生界面的生成代码参与每帧布局；保留调试符号，单独优化该包的 dev 构建。
+[profile.dev.package.resolution-hub-native-ui]
+opt-level = 1

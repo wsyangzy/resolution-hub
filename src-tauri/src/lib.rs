@@ -1,15 +1,15 @@
 mod autostart;
-mod detector;
-mod dialog;
-mod display;
-mod icon;
-mod launcher;
-mod model;
-mod process;
-mod profile;
-mod recent;
-mod runtime;
-mod steam;
+pub mod detector;
+pub mod dialog;
+pub mod display;
+pub mod icon;
+pub mod launcher;
+pub mod model;
+pub mod process;
+pub mod profile;
+pub mod recent;
+pub mod runtime;
+pub mod steam;
 mod tray;
 
 use model::{

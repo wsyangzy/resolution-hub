@@ -1,0 +1,339 @@
+import { Motion, Theme } from "theme.slint";
+import { Workbar } from "workbar.slint";
+import { WindowTitleBar } from "chrome.slint";
+import { AppearancePanel, LibraryPanel } from "panels.slint";
+import { GameEditor, NewGameDraft, SourceEntry } from "game-editor.slint";
+import { DetailEntry, GameDetails } from "game-details.slint";
+import { CloseConfirmation, GameEntry, HubButton } from "components.slint";
+export { DetailEntry, GameEntry, NewGameDraft, SourceEntry }
+
+export component AppWindow inherits Window {
+    title: root.is-panel ? "Resolution Hub · 功能面板" : "Resolution Hub";
+    preferred-width: root.is-panel ? root.panel-width : root.window-mode ? 860px : root.bar-width;
+    preferred-height: root.is-panel ? root.panel-height : root.window-mode ? root.window-content-height : 56px;
+    min-width: root.is-panel ? root.panel-width : root.window-mode ? root.main-min-width : root.bar-width;
+    max-width: root.is-panel ? root.panel-width : root.window-mode ? 100000px : root.bar-width;
+    min-height: root.is-panel ? root.panel-height : root.window-mode ? root.main-min-height : 56px;
+    max-height: root.is-panel ? root.panel-height : root.window-mode ? 100000px : 56px;
+    no-frame: true;
+    resize-border-width: root.window-mode && !root.is-panel ? 6px : 0px;
+    background: transparent;
+    default-font-family: "Microsoft YaHei UI";
+    default-font-size: 13px;
+    icon: @image-url("../../assets/resolution-hub-icon.png");
+
+    in property <bool> is-panel;
+    in property <bool> window-mode;
+    in property <length> main-min-width: 660px;
+    in property <length> main-min-height: 320px;
+    in property <string> appearance-notice;
+    in property <length> bar-width: 688px;
+    in property <length> panel-width: 480px;
+    in property <length> panel-height: 400px;
+    in property <int> active-panel;
+    in property <int> panel-kind;
+    in property <bool> panel-shown;
+    in property <bool> panel-revealed;
+    in property <bool> panel-animate: true;
+    in property <bool> frame-notifier-ready;
+    in property <length> panel-enter-offset: 8px;
+    in property <bool> panels-enabled;
+    callback panel-requested(int);
+    callback view-mode-requested(bool);
+    callback panel-size-requested;
+    callback icon-requested(int);
+    callback panel-dismiss-requested;
+    callback profile-activated(int);
+    callback profile-details-requested(int);
+    callback launch-requested;
+    callback refresh-requested;
+    callback add-requested;
+    callback editor-reload-requested;
+    callback editor-draft-changed(NewGameDraft);
+    callback editor-executable-requested(bool);
+    callback editor-shortcut-requested(bool);
+    callback editor-source-chosen(int);
+    callback editor-search-changed(string);
+    callback editor-refresh-sources;
+    callback editor-detect-requested;
+    callback editor-cancel-detection;
+    callback editor-candidate-selected(int);
+    callback editor-save-requested;
+    callback editor-cancel-requested;
+    callback editor-discard-confirmed;
+    callback editor-discard-cancelled;
+    callback profile-selected(int);
+    callback restore-requested;
+    callback close-confirmed;
+    callback close-cancelled;
+    callback window-drag-requested;
+    callback window-menu-requested(float, float);
+    in property <bool> window-active: true;
+    in property <float> window-scale: 1;
+    in property <bool> animations-enabled: true;
+    in property <[GameEntry]> profile-entries;
+    in property <int> selected-index: -1;
+    in property <bool> has-profile;
+    in property <string> profile-name;
+    in property <string> profile-initial;
+    in property <int> profile-icon-id;
+    in property <image> profile-icon;
+    in property <string> profile-resolution;
+    in property <string> profile-refresh;
+    in property <string> profile-source;
+    in property <[DetailEntry]> profile-details;
+    in property <string> display-summary;
+    in property <string> status-title: "就绪";
+    in property <string> status-text;
+    in property <string> status-phase: "idle";
+    in property <bool> status-error;
+    in property <bool> browse-enabled;
+    in property <bool> add-enabled;
+    in property <bool> editor-active;
+    in property <bool> editor-busy;
+    in property <bool> editor-loaded;
+    in property <bool> editor-dirty;
+    in property <bool> editor-discard-confirmation;
+    in property <string> editor-busy-text;
+    in property <string> editor-error;
+    in property <[string]> editor-displays;
+    in property <[string]> editor-modes;
+    in property <[SourceEntry]> editor-source-entries;
+    in property <string> editor-source-notice;
+    in property <bool> editor-source-selected;
+    in property <string> editor-source-detail;
+    in property <string> editor-source-kind-label;
+    in-out property <string> editor-steam-search;
+    in property <bool> editor-launcher-ready;
+    in property <bool> editor-detecting;
+    in property <bool> editor-can-cancel-detection;
+    in property <string> editor-detect-status;
+    in property <[SourceEntry]> editor-candidates;
+    in-out property <NewGameDraft> editor-draft;
+    in property <bool> launch-enabled;
+    in property <bool> session-active;
+    in property <bool> restore-visible;
+    in property <bool> restore-enabled;
+    in property <string> restore-label;
+    in property <bool> recovery-visible;
+    in property <string> recovery-message;
+    in property <bool> close-confirmation;
+    in property <bool> close-ready;
+    in property <string> close-message;
+
+    out property <length> window-content-height: 154px + main-library.content-height;
+    out property <length> desired-panel-width: root.panel-kind == 4 ? 660px
+        : root.panel-kind == 2 || root.panel-kind == 3 ? (root.has-profile ? 520px : 440px)
+        : root.panel-kind == 7 ? 420px : 460px;
+    out property <length> desired-panel-height: 2px + (
+        root.panel-kind == 1 ? library.content-height
+        : root.panel-kind == 2 || root.panel-kind == 3 ? game-details.content-height
+        : root.panel-kind == 4 ? game-editor.content-height
+        : root.panel-kind == 5 ? discard-dialog.content-height
+        : root.panel-kind == 6 ? close-dialog.content-height
+        : appearance.content-height);
+    out property <duration> panel-exit-duration: Motion.exit;
+    out property <duration> panel-enter-duration: Motion.enter;
+    // 原生尺寸请求可能先于 Slint 的 Resized 事件完成；旧几何不能参与进入动画。
+    out property <bool> panel-geometry-ready: abs(root.width - root.panel-width) * root.window-scale < 0.51px
+        && abs(root.height - root.panel-height) * root.window-scale < 0.51px;
+    out property <float> panel-progress: root.panel-shown && root.panel-revealed ? 1 : 0;
+    private property <color> state-color: root.status-error ? Theme.error
+        : root.recovery-visible ? Theme.warning : root.session-active ? Theme.accent : Theme.success;
+    animate panel-progress { duration: !root.panel-animate ? 0ms : root.panel-shown ? Motion.enter : Motion.exit; easing: Motion.ease; }
+    changed animations-enabled => { Motion.enabled = root.animations-enabled; }
+    changed desired-panel-height => { if root.is-panel { root.panel-size-requested(); } }
+
+    public function focus-content() {
+        if !root.is-panel {
+            if root.window-mode { main-library.focus-list(); }
+            return;
+        }
+        if !root.panel-shown || !root.panel-revealed { return; }
+        if close-dialog.blocking { close-dialog.focus-cancel(); }
+        else if discard-dialog.blocking { discard-dialog.focus-cancel(); }
+        else if root.editor-active { game-editor.focus-first(); }
+        else if root.panel-kind == 1 { library.focus-list(); }
+        else if root.panel-kind == 2 || root.panel-kind == 3 { game-details.focus-close(); }
+        else if root.panel-kind == 7 { appearance.focus-close(); }
+    }
+
+    Rectangle {
+        x: 0px;
+        y: root.is-panel ? (1 - root.panel-progress) * root.panel-enter-offset : 0px;
+        // 内容先按目标宽度测量，边框也只覆盖目标区域，不借用正在变化的窗口尺寸。
+        width: root.is-panel ? root.panel-width : parent.width;
+        height: root.is-panel ? root.panel-height : parent.height;
+        visible: !root.is-panel || root.panel-geometry-ready;
+        border-width: 1px;
+        clip: true;
+        border-color: root.window-active ? Theme.border-strong : Theme.border;
+        border-radius: root.maximized ? 0px : 10px;
+        background: root.window-mode && !root.is-panel ? Theme.canvas : Theme.surface;
+        opacity: root.is-panel ? root.panel-progress : 1;
+        animate border-color { duration: Motion.feedback; }
+        if !root.is-panel && root.window-mode: WindowTitleBar {
+            x: 1px; y: 1px; width: parent.width - 2px;
+            maximized: root.maximized;
+            drag-requested => { root.window-drag-requested(); }
+            menu-requested(x, y) => { root.window-menu-requested(x + 1, y + 1); }
+            minimize-requested => { root.minimized = true; }
+            maximize-requested => { root.maximized = !root.maximized; }
+            close-requested => { root.close(); }
+        }
+        if !root.is-panel: Workbar {
+            x: 1px; y: root.window-mode ? 41px : 1px; width: parent.width - 2px; height: 54px;
+            window-mode: root.window-mode;
+            game-name: root.profile-name;
+            game-mode: root.profile-resolution + " · " + root.profile-refresh + " Hz";
+            game-initial: root.profile-initial; game-icon: root.profile-icon; game-icon-id: root.profile-icon-id;
+            has-game: root.has-profile;
+            panels-enabled: root.panels-enabled;
+            add-enabled: root.add-enabled;
+            launch-enabled: root.launch-enabled;
+            restore-visible: root.restore-visible;
+            restore-enabled: root.restore-enabled;
+            session-active: root.session-active;
+            editor-active: root.editor-active;
+            editor-confirming: root.close-confirmation || root.editor-discard-confirmation;
+            active-panel: root.active-panel;
+            status-color: root.state-color;
+            status-label: root.status-title;
+            icon-requested(id) => { root.icon-requested(id); }
+            panel-requested(kind) => { root.panel-requested(kind); }
+            add-requested => { root.add-requested(); }
+            launch-requested => { root.launch-requested(); }
+            restore-requested => { root.restore-requested(); }
+            drag-requested => { root.window-drag-requested(); }
+            menu-requested(x, y) => { root.window-menu-requested(x + 1, y + self.y / 1px); }
+            minimize-requested => { root.minimized = true; }
+            close-requested => { root.close(); }
+        }
+        main-library := LibraryPanel {
+            x: 12px; y: 104px; width: parent.width - 24px; height: max(0px, parent.height - 148px);
+            visible: !root.is-panel && root.window-mode;
+            active: !root.is-panel && root.window-mode;
+            embedded: true;
+            border-radius: 9px; border-width: 1px; border-color: Theme.border;
+            browse-enabled: root.browse-enabled; details-enabled: root.panels-enabled; add-enabled: root.add-enabled;
+            session-active: root.session-active;
+            entries: root.profile-entries; selected-index: root.selected-index;
+            added => { root.add-requested(); }
+            refreshed => { root.refresh-requested(); }
+            selected(index) => { root.profile-selected(index); }
+            activated(index) => { root.profile-activated(index); }
+            details-requested(index) => { root.profile-details-requested(index); }
+            icon-requested(id) => { root.icon-requested(id); }
+        }
+        if !root.is-panel && root.window-mode: HorizontalLayout {
+            x: 12px; y: parent.height - 39px; width: parent.width - 24px; height: 32px; spacing: 10px;
+            HubButton {
+                text: root.status-title; icon: "activity"; compact: true; flat: true; tone: root.state-color;
+                selected: root.active-panel == 2 || root.active-panel == 3; enabled: root.panels-enabled; label: "游戏与会话：" + root.status-title;
+                clicked => { root.panel-requested(3); }
+            }
+            Text { text: root.display-summary; color: Theme.muted; font-size: 11px; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+            Text { text: root.session-active ? "自动恢复已开启" : "退出游戏后自动恢复桌面"; color: root.state-color; font-size: 11px; vertical-alignment: center; }
+        }
+
+        panel-keys := FocusScope {
+            x: 1px; y: 1px; width: parent.width - 2px; height: parent.height - 2px;
+            enabled: root.is-panel && root.panel-shown && root.panel-revealed;
+            visible: root.is-panel;
+            key-pressed(event) => {
+                if event.text == Key.Escape { root.panel-dismiss-requested(); return accept; }
+                return reject;
+            }
+            library := LibraryPanel {
+                visible: root.panel-kind == 1;
+                active: root.is-panel && root.panel-shown && root.panel-kind == 1;
+                browse-enabled: root.browse-enabled; details-enabled: root.panels-enabled; add-enabled: root.add-enabled;
+                session-active: root.session-active;
+                entries: root.profile-entries; selected-index: root.selected-index;
+                closed => { root.panel-dismiss-requested(); }
+                added => { root.add-requested(); }
+                refreshed => { root.refresh-requested(); }
+                selected(index) => { root.profile-selected(index); }
+                activated(index) => { root.profile-activated(index); }
+                details-requested(index) => { root.profile-details-requested(index); }
+                icon-requested(id) => { root.icon-requested(id); }
+            }
+            game-details := GameDetails {
+                visible: root.panel-kind == 2 || root.panel-kind == 3;
+                active: root.is-panel && root.panel-shown && (root.panel-kind == 2 || root.panel-kind == 3);
+                has-profile: root.has-profile;
+                name: root.profile-name; initial: root.profile-initial; icon: root.profile-icon; icon-id: root.profile-icon-id;
+                mode: root.profile-resolution + " · " + root.profile-refresh + " Hz";
+                source: root.profile-source; entries: root.profile-details;
+                status-title: root.status-title; status-message: root.status-text; status-phase: root.status-phase;
+                status-error: root.status-error; status-tint: root.state-color;
+                recovery-visible: root.recovery-visible; recovery-message: root.recovery-message;
+                session-active: root.session-active; display: root.display-summary;
+                browse-enabled: root.browse-enabled;
+                restore-visible: root.restore-visible; restore-enabled: root.restore-enabled; restore-label: root.restore-label;
+                close-requested => { root.panel-dismiss-requested(); }
+                icon-requested(id) => { root.icon-requested(id); }
+                refreshed => { root.refresh-requested(); }
+                restored => { root.restore-requested(); }
+            }
+            appearance := AppearancePanel {
+                visible: root.panel-kind == 7;
+                active: root.is-panel && root.panel-shown && root.panel-kind == 7;
+                window-mode: root.window-mode; notice: root.appearance-notice;
+                chosen(window-mode) => { root.view-mode-requested(window-mode); }
+                closed => { root.panel-dismiss-requested(); }
+            }
+            game-editor := GameEditor {
+                active: root.is-panel && root.editor-active;
+                embedded: true;
+                enabled: root.panel-shown && !close-dialog.blocking && !discard-dialog.blocking;
+                busy: root.editor-busy; loaded: root.editor-loaded; dirty: root.editor-dirty;
+                busy-text: root.editor-busy-text; error: root.editor-error;
+                draft <=> root.editor-draft;
+                displays: root.editor-displays; modes: root.editor-modes;
+                source-entries: root.editor-source-entries; source-notice: root.editor-source-notice;
+                source-selected: root.editor-source-selected; source-detail: root.editor-source-detail;
+                source-kind-label: root.editor-source-kind-label;
+                steam-search <=> root.editor-steam-search;
+                launcher-ready: root.editor-launcher-ready; detecting: root.editor-detecting;
+                can-cancel-detection: root.editor-can-cancel-detection; detect-status: root.editor-detect-status;
+                candidates: root.editor-candidates;
+                edited(draft) => { root.editor-draft-changed(draft); }
+                executable-requested(replace-name) => { root.editor-executable-requested(replace-name); }
+                shortcut-requested(riot-preset) => { root.editor-shortcut-requested(riot-preset); }
+                source-chosen(index) => { root.editor-source-chosen(index); }
+                icon-requested(id) => { root.icon-requested(id); }
+                search-changed(value) => { root.editor-search-changed(value); }
+                refresh-sources => { root.editor-refresh-sources(); }
+                detect-requested => { root.editor-detect-requested(); }
+                cancel-detection => { root.editor-cancel-detection(); }
+                candidate-selected(index) => { root.editor-candidate-selected(index); }
+                reload-requested => { root.editor-reload-requested(); }
+                save-requested => { root.editor-save-requested(); }
+                cancel-requested => { root.editor-cancel-requested(); }
+                dismissed => { root.focus-content(); }
+            }
+
+            discard-dialog := CloseConfirmation {
+                active: root.is-panel && root.editor-discard-confirmation;
+                embedded: true; ready: true;
+                heading: "放弃添加游戏？"; description: "本次填写的内容尚未保存";
+                message: "放弃后将返回主界面，已有游戏配置不受影响。";
+                confirm-label: "放弃添加"; cancel-label: "继续填写";
+                confirmed => { root.editor-discard-confirmed(); }
+                cancelled => { root.editor-discard-cancelled(); }
+                dismissed => { root.focus-content(); }
+            }
+            close-dialog := CloseConfirmation {
+                active: root.is-panel && root.close-confirmation;
+                embedded: true; ready: root.close-ready;
+                heading: root.editor-active ? "退出应用？" : "安全退出";
+                description: root.editor-active ? "请确认新增游戏是否需要保留" : "先恢复桌面，再关闭应用";
+                message: root.close-message;
+                confirmed => { root.close-confirmed(); }
+                cancelled => { root.close-cancelled(); }
+                dismissed => { root.focus-content(); }
+            }
+        }
+    }
+}

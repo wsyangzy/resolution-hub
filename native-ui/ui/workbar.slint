@@ -1,0 +1,172 @@
+import { Motion, Theme } from "theme.slint";
+import { ToolbarHandle } from "chrome.slint";
+import { ActionArea, FocusRing, GameIcon, Glyph, HubButton } from "components.slint";
+
+component ToolSeparator inherits Rectangle {
+    width: 1px; height: 40px;
+    vertical-stretch: 0;
+    Rectangle { x: 0px; y: 8px; width: 1px; height: 24px; background: Theme.border; }
+}
+
+component GamePicker inherits Rectangle {
+    in property <string> name;
+    in property <string> mode;
+    in property <string> initial;
+    in property <image> icon;
+    in property <int> icon-id;
+    in property <bool> enabled;
+    in property <bool> expanded;
+    callback clicked;
+    callback icon-requested(int);
+    min-width: 150px; preferred-width: 238px; horizontal-stretch: 1;
+    height: 40px;
+    vertical-stretch: 0;
+    forward-focus: action;
+    accessible-role: button;
+    accessible-label: root.name + "，" + root.mode + (root.expanded ? "，收起游戏库" : "，展开游戏库");
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    private property <length> inset: action.pressed ? 1px : 0px;
+    animate inset { duration: Motion.press; easing: Motion.ease; }
+    Rectangle {
+        x: root.inset; y: root.inset;
+        width: parent.width - 2 * root.inset; height: parent.height - 2 * root.inset;
+        border-radius: 8px; border-width: 1px;
+        border-color: transparent;
+        background: action.pressed ? Theme.selection-pressed
+            : root.expanded ? Theme.accent-soft : action.hovered ? Theme.raised : Theme.canvas;
+        animate background, border-color { duration: Motion.feedback; }
+        GameIcon {
+            x: 7px; y: (parent.height - self.height) / 2; width: 30px; height: 30px;
+            source: root.icon; icon-id: root.icon-id; initial: root.initial; selected: root.expanded;
+            requested(id) => { root.icon-requested(id); }
+        }
+        Text {
+            x: 46px; y: 3px; width: max(0px, parent.width - 74px); height: 18px;
+            text: root.name; color: root.enabled ? Theme.text : Theme.secondary;
+            font-size: 12px; font-weight: 600; overflow: elide; vertical-alignment: center;
+        }
+        Text {
+            x: 46px; y: 22px; width: max(0px, parent.width - 74px); height: 15px;
+            text: root.mode; color: Theme.muted; font-size: 11px; font-family: Theme.display-font;
+            overflow: elide; vertical-alignment: center;
+        }
+        Glyph {
+            x: parent.width - 25px; y: (parent.height - self.height) / 2; width: 14px; height: 14px;
+            name: root.expanded ? "chevron-up" : "chevron-down"; color: root.expanded ? Theme.accent : Theme.muted;
+        }
+        FocusRing {
+            x: 0px; y: 0px; width: parent.width; height: parent.height;
+            active: action.focus-visible; radius: parent.border-radius;
+        }
+    }
+    action := ActionArea {
+        x: 0px; y: 0px; width: parent.width; height: parent.height;
+        enabled: root.enabled;
+        activated => { root.clicked(); }
+        navigation-key(event) => {
+            if event.text == Key.DownArrow { root.clicked(); return accept; }
+            return reject;
+        }
+    }
+}
+
+export component Workbar inherits Rectangle {
+    in property <bool> active: true;
+    in property <bool> window-mode;
+    in property <string> game-name;
+    in property <string> game-mode;
+    in property <string> game-initial;
+    in property <image> game-icon;
+    in property <int> game-icon-id;
+    in property <bool> has-game;
+    in property <bool> panels-enabled;
+    in property <bool> add-enabled;
+    in property <bool> launch-enabled;
+    in property <bool> restore-visible;
+    in property <bool> restore-enabled;
+    in property <bool> session-active;
+    in property <bool> editor-active;
+    in property <bool> editor-confirming;
+    in property <int> active-panel;
+    in property <color> status-color;
+    in property <string> status-label;
+    callback panel-requested(int);
+    callback add-requested;
+    callback launch-requested;
+    callback restore-requested;
+    callback drag-requested;
+    callback menu-requested(float, float);
+    callback minimize-requested;
+    callback close-requested;
+    callback icon-requested(int);
+
+    HorizontalLayout {
+        x: 0px; y: 0px; width: parent.width; height: parent.height;
+        padding: 7px; spacing: 5px;
+        cross-axis-alignment: center;
+        ToolbarHandle {
+            visible: !root.window-mode; width: root.window-mode ? 0px : 32px;
+            drag-requested => { root.drag-requested(); }
+            menu-requested(x, y) => { root.menu-requested(x + self.x / 1px, y + self.y / 1px); }
+        }
+        GamePicker {
+            name: root.has-game ? root.game-name : "选择游戏";
+            mode: root.has-game ? root.game-mode : "打开游戏库，或点击 + 添加";
+            initial: root.has-game ? root.game-initial : "+";
+            icon: root.game-icon; icon-id: root.active ? root.game-icon-id : 0;
+            enabled: root.panels-enabled;
+            expanded: root.active-panel == 1;
+            clicked => { root.panel-requested(1); }
+            icon-requested(id) => { root.icon-requested(id); }
+        }
+        HubButton {
+            text: root.restore-visible ? (root.session-active ? "结束" : "恢复") : "启动";
+            icon: root.restore-visible ? (root.session-active ? "stop" : "restore") : "play";
+            primary: true;
+            tone: root.restore-visible ? Theme.warning : Theme.accent;
+            label: root.restore-visible ? "结束会话并恢复桌面" : "启动所选游戏";
+            enabled: root.restore-visible ? root.restore-enabled : root.launch-enabled;
+            clicked => { if root.restore-visible { root.restore-requested(); } else { root.launch-requested(); } }
+        }
+        ToolSeparator { }
+        Rectangle {
+            width: 72px; height: 38px; border-radius: 8px; background: Theme.canvas;
+            border-width: 1px; border-color: Theme.border;
+            HorizontalLayout {
+                x: 0px; y: 0px; width: parent.width; height: parent.height;
+                padding: 3px; spacing: 2px;
+                cross-axis-alignment: center;
+                HubButton {
+                    icon: "plus"; flat: true; compact: true; selected: root.editor-active;
+                    label: root.editor-active ? "收起添加游戏面板" : "添加游戏";
+                    enabled: root.add-enabled && !root.editor-confirming;
+                    clicked => { root.add-requested(); }
+                }
+                Rectangle {
+                    width: 32px; height: 32px;
+                    HubButton {
+                        x: 0px; y: 0px; width: 32px; compact: true;
+                        icon: "activity"; flat: true; selected: root.active-panel == 2 || root.active-panel == 3;
+                        label: "游戏与会话：" + root.status-label;
+                        enabled: root.panels-enabled;
+                        clicked => { root.panel-requested(3); }
+                    }
+                    Rectangle {
+                        x: 24px; y: 4px; width: 6px; height: 6px; border-radius: 3px;
+                        background: root.status-color; border-width: 1px; border-color: Theme.surface;
+                        animate background { duration: Motion.feedback; }
+                    }
+                }
+            }
+        }
+        HubButton {
+            icon: "layout"; text: root.width < 620px ? "" : "布局"; compact: true; flat: true; selected: root.active-panel == 7;
+            label: "选择工作条或应用窗口布局"; enabled: root.panels-enabled;
+            clicked => { root.panel-requested(7); }
+        }
+        ToolSeparator { }
+        if !root.window-mode: HubButton { icon: "minimize"; compact: true; flat: true; label: "最小化工具条"; clicked => { root.minimize-requested(); } }
+        if !root.window-mode: HubButton { icon: "close"; compact: true; flat: true; danger: true; label: "安全退出 Resolution Hub"; clicked => { root.close-requested(); } }
+    }
+}

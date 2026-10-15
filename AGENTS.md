@@ -64,23 +64,35 @@ npm install
 npm run dev
 ```
 
-常用的最小验证：
+验证按改动侧选取，不要全跑。前端改动不触发任何 `cargo` 命令，Rust 改动不触发任何 `npm` 命令。
+
+前端侧：
 
 ```powershell
-npm run typecheck
-npm test
-npm run build:web
-cargo fmt --check
-cargo test
+npm run typecheck      # 默认
+npm test -- ProfileEditor   # 按文件或测试名过滤
+npm run build:web      # 触及构建产物或样式时
 ```
+
+Rust 侧按成本升级，停在能证伪本次改动的最低一档：
+
+```powershell
+cargo fmt --check                  # 秒级，先跑
+cargo check                        # 不做 codegen/link，签名与类型改动的默认档
+cargo test --lib model::           # 改动逻辑有测试覆盖时，按模块过滤
+cargo test                         # 跨模块改动，或改了测试代码
+cargo build                        # 仅在触及 Windows API 边界或链接配置时
+```
+
+升档需要给出理由。纯重构没有行为变化时，`cargo check` 通过即为充分证明。`cargo` 编译在持续输出时不要中断——Tauri + windows-rs 冷编译 5-15 分钟属正常，产物是增量累积的，杀掉重跑只会更慢。
 
 根据改动范围扩大验证：
 
 - 前端样式、布局和视觉效果统一由用户自行验证。Codex 不得使用 Playwright（包括 CLI 和 MCP）、浏览器自动化截图或主动启动前端预览/开发服务进行视觉验收；仅执行 `npm run typecheck`、`npm test`、`npm run build:web` 等非视觉检查，并在交付中明确说明未进行视觉验收。
 - 只改文档：先运行 `git diff --check`。样式改动还需运行 `npm run build:web`；760x560 最小尺寸和 980x720 默认尺寸由用户在 Tauri 窗口中自行检查，Codex 不得代为执行。
-- 改动 Rust 模型、配置、启动或进程逻辑：运行 `cargo fmt --check` 和 `cargo test`；影响 Windows API 边界时再运行 `cargo build`。
+- 改动 Rust 模型、配置、启动或进程逻辑：运行 `cargo fmt --check` 和 `cargo check`；改动逻辑有测试覆盖时补 `cargo test --lib <module>::`；影响 Windows API 边界时才运行 `cargo build`。
 - 改动显示切换、恢复、取消或窗口关闭：自动测试不能证明真实硬件行为，还要在 Windows 上手动验证正常退出、启动超时、取消等待、手动恢复和关闭窗口路径。
-- 改动 Tauri command：除 Rust 测试外，运行 `npm run typecheck`、`npm test` 和 `npm run build:web`，并核对 `generate_handler!` 与 `frontend/src/lib/tauri.ts`。
-- 改动打包、图标或发布配置时才运行 `npm run build`；只需要 Release 可执行文件时使用 `npm run build -- --no-bundle`。
+- 改动 Tauri command：除 Rust 侧检查外，运行 `npm run typecheck` 和 `npm run build:web`，并核对 `generate_handler!` 与 `frontend/src/lib/tauri.ts`。
+- `npm run build`（tauri build，release profile）会重编整棵依赖树且与 dev profile 不共享产物，只能用于发布，绝不作为验证手段；只需要 Release 可执行文件时使用 `npm run build -- --no-bundle`。
 
 版本发布时保持 `src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`、`Cargo.lock` 和关于弹窗中的可见版本一致。

@@ -5,4 +5,5 @@
 /src-tauri/gen
 /src-tauri/target
 /target
+.cargo-target/
 *.log

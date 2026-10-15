@@ -48,6 +48,8 @@ pub struct RuntimeManager {
     display_operation: Arc<Mutex<()>>,
 }
 
+pub type StatusSink = Arc<dyn Fn(RuntimeStatus) + Send + Sync + 'static>;
+
 impl Default for RuntimeManager {
     fn default() -> Self {
         Self {
@@ -79,6 +81,15 @@ impl RuntimeManager {
     }
 
     pub fn start(&self, profile: GameProfile, app: AppHandle) -> Result<(), String> {
+        let sink = tauri_status_sink(app.clone());
+        let result = self.start_with_sink(profile, sink);
+        if result.is_ok() {
+            crate::tray::refresh_games(&app);
+        }
+        result
+    }
+
+    pub fn start_with_sink(&self, profile: GameProfile, sink: StatusSink) -> Result<(), String> {
         let generation = {
             let mut status = self
                 .status
@@ -101,13 +112,12 @@ impl RuntimeManager {
             generation
         };
         let _ = profile::record_launch(&profile.id);
-        crate::tray::refresh_games(&app);
-        self.emit(&app);
+        self.emit(&sink);
 
         let manager = self.clone();
         thread::spawn(move || {
-            if let Err(error) = manager.run_session(&profile, generation, &app) {
-                manager.handle_session_error(error, generation, &app);
+            if let Err(error) = manager.run_session(&profile, generation, &sink) {
+                manager.handle_session_error(error, generation, &sink);
             }
         });
         Ok(())
@@ -116,6 +126,10 @@ impl RuntimeManager {
     /// 结束当前会话并恢复桌面显示模式。守候阶段没有恢复点时恢复本身是空操作，
     /// 所以这也是「退出专注页」唯一需要的动作。
     pub fn restore_now(&self, app: &AppHandle) -> Result<(), String> {
+        self.restore_now_with_sink(tauri_status_sink(app.clone()))
+    }
+
+    pub fn restore_now_with_sink(&self, sink: StatusSink) -> Result<(), String> {
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.set_status_unchecked(
             RuntimeStatus {
@@ -125,7 +139,7 @@ impl RuntimeManager {
                 message: "正在恢复桌面显示模式".to_string(),
                 can_restore: true,
             },
-            app,
+            &sink,
         );
 
         if let Err(error) = self.restore_pending_serialized() {
@@ -137,7 +151,7 @@ impl RuntimeManager {
                     message: format!("恢复桌面显示模式失败：{error}"),
                     can_restore: true,
                 },
-                app,
+                &sink,
             );
             return Err(error);
         }
@@ -149,7 +163,7 @@ impl RuntimeManager {
                 message: "桌面显示模式已恢复".to_string(),
                 can_restore: false,
             },
-            app,
+            &sink,
         );
         Ok(())
     }
@@ -160,9 +174,9 @@ impl RuntimeManager {
         &self,
         game: &GameProfile,
         generation: u64,
-        app: &AppHandle,
+        sink: &StatusSink,
     ) -> Result<(), String> {
-        let Some(_) = self.start_first_round(game, generation, app)? else {
+        let Some(_) = self.start_first_round(game, generation, sink)? else {
             return Ok(());
         };
 
@@ -172,9 +186,9 @@ impl RuntimeManager {
                 "running",
                 "游戏运行中，退出后将自动恢复",
                 true,
-                app,
+                sink,
             );
-            if !self.stabilize_target_mode(game, generation, app)? {
+            if !self.stabilize_target_mode(game, generation, sink)? {
                 return Ok(());
             }
             if !self.wait_for_exit(game, generation)? {
@@ -186,7 +200,7 @@ impl RuntimeManager {
                 "restoring",
                 "游戏已退出，正在恢复桌面",
                 true,
-                app,
+                sink,
             );
             if !self.sleep_while_current(
                 generation,
@@ -203,7 +217,7 @@ impl RuntimeManager {
                 "waiting",
                 "桌面已恢复，正在等待游戏再次启动",
                 false,
-                app,
+                sink,
             );
             let Some(_) = self.wait_for_process(game, generation, None)? else {
                 return Ok(());
@@ -213,7 +227,7 @@ impl RuntimeManager {
                 "switching",
                 "已检测到游戏进程，正在切换显示模式",
                 false,
-                app,
+                sink,
             );
             self.switch_to_target(game, generation)?;
             if !self.is_current(generation) {
@@ -228,7 +242,7 @@ impl RuntimeManager {
         &self,
         game: &GameProfile,
         generation: u64,
-        app: &AppHandle,
+        sink: &StatusSink,
     ) -> Result<Option<u32>, String> {
         if let Some(pid) = process::find_pid(&game.process_name) {
             self.update(
@@ -236,7 +250,7 @@ impl RuntimeManager {
                 "switching",
                 "检测到游戏已在运行，正在接管显示模式",
                 false,
-                app,
+                sink,
             );
             self.switch_to_target(game, generation)?;
             return Ok(self.is_current(generation).then_some(pid));
@@ -249,7 +263,7 @@ impl RuntimeManager {
                 "switching",
                 "正在记录并切换显示模式",
                 false,
-                app,
+                sink,
             );
             self.switch_to_target(game, generation)?;
             self.update(
@@ -257,10 +271,10 @@ impl RuntimeManager {
                 "launching",
                 "显示模式切换成功，正在启动游戏",
                 true,
-                app,
+                sink,
             );
         } else {
-            self.update(generation, "launching", "正在打开游戏启动器", false, app);
+            self.update(generation, "launching", "正在打开游戏启动器", false, sink);
         }
 
         if !self.is_current(generation) {
@@ -278,7 +292,7 @@ impl RuntimeManager {
                 "游戏命令已发送，正在等待进程"
             },
             matches!(switch_timing, SwitchTiming::BeforeLaunch),
-            app,
+            sink,
         );
 
         let timeout_sec = game.launch_timeout_sec.clamp(30, 3_600);
@@ -293,7 +307,7 @@ impl RuntimeManager {
                 "switching",
                 "已检测到游戏进程，正在切换显示模式",
                 false,
-                app,
+                sink,
             );
             self.switch_to_target(game, generation)?;
             if !self.is_current(generation) {
@@ -387,7 +401,7 @@ impl RuntimeManager {
         &self,
         game: &GameProfile,
         generation: u64,
-        app: &AppHandle,
+        sink: &StatusSink,
     ) -> Result<bool, String> {
         let started = Instant::now();
         let mode_deadline = started + GAME_DISPLAY_STABILIZATION_WINDOW;
@@ -418,7 +432,7 @@ impl RuntimeManager {
 
             if watch_mode && verify_display_mode(&target).is_err() {
                 reapplied += 1;
-                if !self.reapply_target_mode(&target, generation, app)? {
+                if !self.reapply_target_mode(&target, generation, sink)? {
                     return Ok(false);
                 }
                 // 重新应用会再造一次错配，窗口要重新观察。
@@ -449,14 +463,14 @@ impl RuntimeManager {
         &self,
         target: &DisplayMode,
         generation: u64,
-        app: &AppHandle,
+        sink: &StatusSink,
     ) -> Result<bool, String> {
         self.update(
             generation,
             "switching",
             "游戏覆盖了显示模式，正在重新应用",
             true,
-            app,
+            sink,
         );
         let outcome = {
             let _display_operation = self
@@ -475,14 +489,14 @@ impl RuntimeManager {
                 "running",
                 "游戏运行中，退出后将自动恢复",
                 true,
-                app,
+                sink,
             ),
             Err(_) => self.update(
                 generation,
                 "running",
                 "游戏坚持使用自己的显示模式，已保留它的设置",
                 true,
-                app,
+                sink,
             ),
         }
         Ok(true)
@@ -496,7 +510,7 @@ impl RuntimeManager {
         restore_pending()
     }
 
-    fn handle_session_error(&self, error: String, generation: u64, app: &AppHandle) {
+    fn handle_session_error(&self, error: String, generation: u64, sink: &StatusSink) {
         if !self.is_current(generation) {
             return;
         }
@@ -522,7 +536,7 @@ impl RuntimeManager {
                 message,
                 can_restore,
             },
-            app,
+            sink,
         );
     }
 
@@ -548,7 +562,7 @@ impl RuntimeManager {
         phase: &str,
         message: &str,
         can_restore: bool,
-        app: &AppHandle,
+        sink: &StatusSink,
     ) {
         let current = self.status();
         self.set_status(
@@ -560,29 +574,34 @@ impl RuntimeManager {
                 message: message.to_string(),
                 can_restore,
             },
-            app,
+            sink,
         );
     }
 
-    fn set_status(&self, generation: u64, status: RuntimeStatus, app: &AppHandle) {
+    fn set_status(&self, generation: u64, status: RuntimeStatus, sink: &StatusSink) {
         if self.is_current(generation) {
-            self.set_status_unchecked(status, app);
+            self.set_status_unchecked(status, sink);
         }
     }
 
-    fn set_status_unchecked(&self, status: RuntimeStatus, app: &AppHandle) {
+    fn set_status_unchecked(&self, status: RuntimeStatus, sink: &StatusSink) {
         if let Ok(mut current) = self.status.lock() {
             *current = status.clone();
         }
-        crate::tray::update_status(app, &status);
-        let _ = app.emit("runtime-status", status);
+        sink(status);
     }
 
-    fn emit(&self, app: &AppHandle) {
+    fn emit(&self, sink: &StatusSink) {
         let status = self.status();
-        crate::tray::update_status(app, &status);
-        let _ = app.emit("runtime-status", status);
+        sink(status);
     }
+}
+
+fn tauri_status_sink(app: AppHandle) -> StatusSink {
+    Arc::new(move |status| {
+        crate::tray::update_status(&app, &status);
+        let _ = app.emit("runtime-status", status);
+    })
 }
 
 fn target_mode(game: &GameProfile) -> DisplayMode {

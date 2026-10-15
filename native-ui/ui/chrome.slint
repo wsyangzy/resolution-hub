@@ -1,0 +1,77 @@
+import { Motion, Theme } from "theme.slint";
+import { Glyph, HubButton, IconSlot } from "components.slint";
+
+export component ToolbarHandle inherits Rectangle {
+    callback drag-requested;
+    callback menu-requested(float, float);
+    width: 36px;
+    height: 40px;
+    border-radius: 8px;
+    background: title-touch.has-hover ? Theme.raised : transparent;
+    animate background { duration: Motion.feedback; }
+    Glyph { x: 8px; y: 10px; width: 20px; height: 20px; name: "monitor"; color: Theme.accent; }
+    accessible-role: text;
+    accessible-label: "Resolution Hub，拖动此处移动工具条";
+    title-touch := TouchArea {
+        property <bool> dragging;
+        enabled: !self.dragging;
+        mouse-cursor: move;
+        moved => {
+            if self.pressed && (abs(self.mouse-x - self.pressed-x) > 4px || abs(self.mouse-y - self.pressed-y) > 4px) {
+                self.dragging = true;
+                root.drag-requested();
+                self.dragging = false;
+            }
+        }
+        pointer-event(event) => {
+            if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
+                root.menu-requested((self.mouse-x + self.x) / 1px, (self.mouse-y + self.y) / 1px);
+            }
+        }
+    }
+}
+
+export component WindowTitleBar inherits Rectangle {
+    in property <bool> maximized;
+    callback drag-requested;
+    callback menu-requested(float, float);
+    callback minimize-requested;
+    callback maximize-requested;
+    callback close-requested;
+    height: 40px;
+    background: Theme.canvas;
+    HorizontalLayout {
+        x: 0px; y: 0px; width: parent.width; height: parent.height; padding-left: 14px; padding-right: 6px; spacing: 4px;
+        cross-axis-alignment: center;
+        Rectangle {
+            height: parent.height;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                x: 0px; y: 0px; width: parent.width; height: parent.height;
+                spacing: 9px;
+                IconSlot { name: "monitor"; tint: Theme.accent; }
+                Text { text: "Resolution Hub"; color: Theme.text; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+                Text { text: "游戏显示模式"; color: Theme.muted; font-size: 11px; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            drag := TouchArea {
+                property <bool> dragging;
+                enabled: !self.dragging;
+                moved => {
+                    if self.pressed && (abs(self.mouse-x - self.pressed-x) > 4px || abs(self.mouse-y - self.pressed-y) > 4px) {
+                        self.dragging = true; root.drag-requested(); self.dragging = false;
+                    }
+                }
+                double-clicked => { root.maximize-requested(); }
+                pointer-event(event) => {
+                    if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
+                        root.menu-requested((self.mouse-x + parent.x) / 1px, (self.mouse-y + parent.y) / 1px);
+                    }
+                }
+            }
+        }
+        HubButton { icon: "minimize"; compact: true; flat: true; label: "最小化"; clicked => { root.minimize-requested(); } }
+        HubButton { icon: root.maximized ? "window" : "maximize"; compact: true; flat: true; label: root.maximized ? "还原窗口" : "最大化"; clicked => { root.maximize-requested(); } }
+        HubButton { icon: "close"; compact: true; flat: true; danger: true; label: "安全退出 Resolution Hub"; clicked => { root.close-requested(); } }
+    }
+}
