@@ -27,7 +27,7 @@ BEGIN
             VALUE "ProductName", "Resolution Hub"
             VALUE "FileVersion", "{version}"
             VALUE "ProductVersion", "{version}"
-            VALUE "OriginalFilename", "resolution-hub-native-ui.exe"
+            VALUE "OriginalFilename", "resolution-hub.exe"
         END
     END
     BLOCK "VarFileInfo"

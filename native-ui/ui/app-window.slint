@@ -8,7 +8,7 @@ import { CloseConfirmation, GameEntry, HubButton } from "components.slint";
 export { DetailEntry, GameEntry, NewGameDraft, SourceEntry }
 
 export component AppWindow inherits Window {
-    title: root.is-panel ? "Resolution Hub · 功能面板" : "Resolution Hub";
+    title: "Resolution Hub " + root.build-label + (root.is-panel ? " · 功能面板" : "");
     preferred-width: root.is-panel ? root.panel-width : root.window-mode ? 860px : root.bar-width;
     preferred-height: root.is-panel ? root.panel-height : root.window-mode ? root.window-content-height : 56px;
     min-width: root.is-panel ? root.panel-width : root.window-mode ? root.main-min-width : root.bar-width;
@@ -23,6 +23,7 @@ export component AppWindow inherits Window {
     icon: @image-url("../../assets/resolution-hub-icon.png");
 
     in property <bool> is-panel;
+    in property <string> build-label;
     in property <bool> window-mode;
     in property <length> main-min-width: 660px;
     in property <length> main-min-height: 320px;
@@ -175,6 +176,7 @@ export component AppWindow inherits Window {
         if !root.is-panel && root.window-mode: WindowTitleBar {
             x: 1px; y: 1px; width: parent.width - 2px;
             maximized: root.maximized;
+            build-label: root.build-label;
             drag-requested => { root.window-drag-requested(); }
             menu-requested(x, y) => { root.window-menu-requested(x + 1, y + 1); }
             minimize-requested => { root.minimized = true; }

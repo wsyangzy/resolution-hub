@@ -65,7 +65,12 @@ RuntimeStatus.phase 为 `idle`、`preparing`、`switching`、`launching`、`wait
 不要恢复 npm、Vite 或 Tauri 构建流程。
 
 远程 Windows CI 必须使用锁文件，检查 Rust 格式、运行工作区测试，并为发布构建 Slint Release EXE。
+`ci.yml`、`nightly.yml` 和 `release.yml` 分别负责验证、定时/手动预发布和版本标签正式发布。
+共用构建步骤位于 `.github/actions/build-windows/action.yml`，复用 `scripts/Prepare-Executable.ps1` 检查单文件产物。
+CI 不发布；Nightly 仅在 main 定时或手动运行；Release 标签必须与工作区版本一致，不覆盖已发布的正式版本。
 发布验证应检查 x64 PE、GUI 子系统、图标、版本资源和嵌入的 Common-Controls v6 清单。
+Windows x64 统一使用 `.cargo/config.toml` 静态链接 CRT；保留常规和延迟导入的 VC++ 依赖检查。
+Nightly 仅在同一提交已经有完整单 EXE 预发布时跳过，手动 `force` 可以重建；缺失或不完整的发布必须重试。
 测试和构建通过不等于真实显示切换或视觉验收。
 
 界面、布局、动画和 DPI 由用户在 Windows 原生窗口中验收。

@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  # A manual run validates the release build without publishing or moving tags.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build release Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+      sha256: ${{ steps.build.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/build-windows
+        id: build
+        with:
+          expected-tag: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          artifact-name: resolution-hub-release-windows-x64
+
+  publish:
+    name: Publish stable release
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      APP_VERSION: ${{ needs.build.outputs.version }}
+      EXE_SHA256: ${{ needs.build.outputs.sha256 }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: resolution-hub-release-windows-x64
+          path: artifacts
+      - name: Publish versioned executable
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const { owner, repo } = context.repo;
+            const api = github.rest;
+            const tag = context.ref.replace('refs/tags/', '');
+            const version = process.env.APP_VERSION;
+            if (!/^\d+\.\d+\.\d+$/.test(version || '') || tag !== `v${version}`) {
+              throw new Error('Release tag does not match the verified version');
+            }
+            const files = fs.readdirSync('artifacts');
+            if (files.length !== 1 || files[0] !== 'resolution-hub.exe') {
+              throw new Error('Release must contain only resolution-hub.exe');
+            }
+            const name = 'resolution-hub.exe';
+            const data = fs.readFileSync(`artifacts/${name}`);
+            const checksum = crypto.createHash('sha256').update(data).digest('hex');
+            if (checksum !== process.env.EXE_SHA256) throw new Error('Executable checksum mismatch');
+            let release;
+            try {
+              release = (await api.repos.getReleaseByTag({ owner, repo, tag })).data;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              const releases = await github.paginate(api.repos.listReleases, { owner, repo, per_page: 100 });
+              release = releases.find(item => item.tag_name === tag && item.draft);
+            }
+            if (release && !release.draft) {
+              throw new Error('This version is already published; create a new version instead of replacing it');
+            }
+            if (!release) {
+              release = (await api.repos.createRelease({
+                owner, repo, tag_name: tag, target_commitish: context.sha,
+                name: `Resolution Hub ${tag}`, draft: true, prerelease: false
+              })).data;
+            }
+            const previous = await github.paginate(api.repos.listReleaseAssets, {
+              owner, repo, release_id: release.id, per_page: 100
+            });
+            let asset = previous.find(item => item.name === name && item.digest === `sha256:${checksum}`);
+            if (!asset) {
+              const conflicting = previous.find(item => item.name === name);
+              if (conflicting) await api.repos.deleteReleaseAsset({ owner, repo, asset_id: conflicting.id });
+              asset = (await api.repos.uploadReleaseAsset({
+                owner, repo, release_id: release.id, name, data,
+                headers: { 'content-type': 'application/octet-stream' }
+              })).data;
+            }
+            for (const previousAsset of previous) {
+              if (previousAsset.id !== asset.id && previousAsset.name !== name) {
+                await api.repos.deleteReleaseAsset({ owner, repo, asset_id: previousAsset.id });
+              }
+            }
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              'Windows 10/11 x64 Slint 单文件便携版，下载 resolution-hub.exe 后直接运行。',
+              `版本：${tag}`,
+              `来源提交：${context.sha}`,
+              `构建记录：${runUrl}`,
+              `EXE SHA256：${checksum}`,
+              '',
+              '已通过 Windows 工作区测试、Release 构建及 EXE 资源检查。',
+              '真实显示切换、DPI 和界面效果需要用户在 Windows 中验收。',
+              '',
+              `[${name}](${asset.browser_download_url})`
+            ].join('\n');
+            await api.repos.updateRelease({
+              owner, repo, release_id: release.id, name: `Resolution Hub ${tag}`, body,
+              draft: false, prerelease: false, make_latest: 'legacy'
+            });
+            await core.summary.addLink('Download release', release.html_url).write();

@@ -53,12 +53,12 @@ EXE/最近运行默认启动前切换，Steam/启动器默认检测到游戏主�
 
 从 GitHub Actions 下载当前 EXE 后，可用以下 PowerShell 命令比较动画开启与关闭的表现。
 工作目录为仓库根目录，先结束旧会话并正常退出已有实例。
-`-Executable` 必须指向下载并解压的 EXE；脚本会启动应用，每秒记录 CPU、内存、句柄和线程数，
+`-Executable` 必须指向下载的 EXE；脚本会启动应用，每秒记录 CPU、内存、句柄和线程数，
 正常退出后汇总，不自动点击界面或启动游戏。
 
 ```powershell
-& .\native-ui\scripts\Measure-Performance.ps1 -Executable 'C:\下载目录\resolution-hub-native-ui.exe'
-& .\native-ui\scripts\Measure-Performance.ps1 -Executable 'C:\下载目录\resolution-hub-native-ui.exe' -DisableAnimations
+& .\native-ui\scripts\Measure-Performance.ps1 -Executable 'C:\下载目录\resolution-hub.exe'
+& .\native-ui\scripts\Measure-Performance.ps1 -Executable 'C:\下载目录\resolution-hub.exe' -DisableAnimations
 ```
 
 每次按相同顺序打开游戏库、详情、布局与添加，搜索并滚动同一来源列表，再静置 30 秒并关闭。

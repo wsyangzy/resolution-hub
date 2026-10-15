@@ -1,0 +1,206 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even if this commit already has a complete nightly.
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Check for unpublished changes
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        id: plan
+        env:
+          FORCE_BUILD: ${{ inputs.force || false }}
+        with:
+          script: |
+            core.setOutput('build', 'true');
+            if (process.env.FORCE_BUILD === 'true') {
+              await core.summary.addRaw('Forced nightly rebuild requested.\n').write();
+              return;
+            }
+            const { owner, repo } = context.repo;
+            let release, ref;
+            try {
+              release = (await github.rest.repos.getReleaseByTag({ owner, repo, tag: 'nightly' })).data;
+              ref = (await github.rest.git.getRef({ owner, repo, ref: 'tags/nightly' })).data;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              return; // First publication or an incomplete attempt needs a build.
+            }
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              owner, repo, release_id: release.id, per_page: 100
+            });
+            const complete = !release.draft && release.prerelease && assets.length === 1
+              && assets[0].name === 'resolution-hub.exe' && assets[0].state === 'uploaded'
+              && assets[0].size > 0 && /^sha256:[0-9a-f]{64}$/.test(assets[0].digest || '')
+              && (release.body || '').includes(`来源提交：${context.sha}`)
+              && (release.body || '').includes(`EXE SHA256：${assets[0].digest.slice(7)}`);
+            if (ref.object.type === 'commit' && ref.object.sha === context.sha && complete) {
+              core.setOutput('build', 'false');
+              await core.summary.addRaw(`Commit ${context.sha} already has a complete nightly; build and publish skipped.\n`)
+                .addLink('Download current nightly', release.html_url).write();
+            }
+
+  build:
+    name: Build nightly Windows x64
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+      sha256: ${{ steps.build.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/build-windows
+        id: build
+        with:
+          channel: nightly
+          artifact-name: resolution-hub-nightly-windows-x64
+
+  publish:
+    name: Publish nightly
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      APP_VERSION: ${{ needs.build.outputs.version }}
+      EXE_SHA256: ${{ needs.build.outputs.sha256 }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: resolution-hub-nightly-windows-x64
+          path: artifacts
+      - name: Publish nightly executable
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const crypto = require('crypto');
+            const { owner, repo } = context.repo;
+            const api = github.rest;
+            const main = await api.repos.getBranch({ owner, repo, branch: 'main' });
+            if (main.data.commit.sha !== context.sha) {
+              core.notice('Main advanced during the build; keeping the current nightly.');
+              return;
+            }
+            let release;
+            try {
+              release = (await api.repos.getReleaseByTag({ owner, repo, tag: 'nightly' })).data;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              // GitHub does not return an unpublished draft from getReleaseByTag.
+              const releases = await github.paginate(api.repos.listReleases, { owner, repo, per_page: 100 });
+              release = releases.find(item => item.tag_name === 'nightly' && item.draft);
+              if (!release) {
+                release = (await api.repos.createRelease({
+                  owner, repo, tag_name: 'nightly', target_commitish: context.sha,
+                  name: 'Nightly', draft: true, prerelease: true
+                })).data;
+              }
+            }
+            // Stage replacements under temporary names so old downloads survive an upload failure.
+            const files = fs.readdirSync('artifacts').sort();
+            if (files.length !== 1 || files[0] !== 'resolution-hub.exe') {
+              throw new Error('Nightly must contain only resolution-hub.exe');
+            }
+            const executableHash = crypto.createHash('sha256').update(fs.readFileSync('artifacts/resolution-hub.exe')).digest('hex');
+            if (executableHash !== process.env.EXE_SHA256 || !/^\d+\.\d+\.\d+$/.test(process.env.APP_VERSION || '')) {
+              throw new Error('Executable checksum or version differs from the verified build');
+            }
+            const previous = await github.paginate(api.repos.listReleaseAssets, {
+              owner, repo, release_id: release.id, per_page: 100
+            });
+            const uploaded = [];
+            for (const name of files) {
+              const data = fs.readFileSync(path.join('artifacts', name));
+              const digest = `sha256:${crypto.createHash('sha256').update(data).digest('hex')}`;
+              const existing = previous.find(asset => asset.name === name);
+              if (existing?.digest === digest) {
+                uploaded.push({ asset: existing, name });
+                continue;
+              }
+              const uploadName = existing ? `${name}.upload-${context.runId}-${process.env.GITHUB_RUN_ATTEMPT}` : name;
+              const staged = previous.find(asset => asset.name === uploadName && asset.digest === digest);
+              if (staged) {
+                uploaded.push({ asset: staged, name });
+                continue;
+              }
+              const asset = await api.repos.uploadReleaseAsset({
+                owner, repo, release_id: release.id, name: uploadName, data,
+                headers: { 'content-type': 'application/octet-stream' }
+              });
+              uploaded.push({ asset: asset.data, name });
+            }
+            for (const item of uploaded) {
+              if (item.asset.name === item.name) continue;
+              const existing = previous.find(asset => asset.name === item.name);
+              if (existing) {
+                await api.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id });
+                previous.splice(previous.indexOf(existing), 1);
+              }
+              item.asset = (await api.repos.updateReleaseAsset({
+                owner, repo, asset_id: item.asset.id, name: item.name
+              })).data;
+            }
+            let nightlyExists = true;
+            try {
+              await api.git.getRef({ owner, repo, ref: 'tags/nightly' });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              nightlyExists = false;
+            }
+            if (nightlyExists) {
+              await api.git.updateRef({ owner, repo, ref: 'tags/nightly', sha: context.sha, force: true });
+            } else {
+              await api.git.createRef({ owner, repo, ref: 'refs/tags/nightly', sha: context.sha });
+            }
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              'Windows 10/11 x64 Slint 单文件便携版，下载 resolution-hub.exe 后直接运行，无需解压或安装。',
+              `版本：v${process.env.APP_VERSION} · nightly`,
+              '',
+              `来源提交：${context.sha}`,
+              `构建记录：${runUrl}`,
+              `生成时间：${new Date().toISOString()}`,
+              `EXE SHA256：${executableHash}`,
+              '',
+              '已通过 Windows 工作区测试、Release 构建及 EXE 资源检查。',
+              '尚未进行真实显示切换、DPI、滚动与动画的手动验收。',
+              'nightly 为滚动预发布；旧运行的下载包在 Actions artifacts 中保留 30 天。',
+              '',
+              ...uploaded.map(({ asset }) => `- [${asset.name}](${asset.browser_download_url})`)
+            ].join('\n');
+            await api.repos.updateRelease({
+              owner, repo, release_id: release.id, name: `Nightly v${process.env.APP_VERSION}`, body,
+              draft: false, prerelease: true, make_latest: 'false', target_commitish: context.sha
+            });
+            for (const asset of previous) {
+              if (!uploaded.some(current => current.asset.id === asset.id)) {
+                await api.repos.deleteReleaseAsset({ owner, repo, asset_id: asset.id });
+              }
+            }
+            await core.summary.addLink('Download nightly', release.html_url).addRaw(`\nCommit: ${context.sha}\n`).write();

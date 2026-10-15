@@ -33,6 +33,7 @@ export component ToolbarHandle inherits Rectangle {
 
 export component WindowTitleBar inherits Rectangle {
     in property <bool> maximized;
+    in property <string> build-label;
     callback drag-requested;
     callback menu-requested(float, float);
     callback minimize-requested;
@@ -51,7 +52,7 @@ export component WindowTitleBar inherits Rectangle {
                 spacing: 9px;
                 IconSlot { name: "monitor"; tint: Theme.accent; }
                 Text { text: "Resolution Hub"; color: Theme.text; font-size: 12px; font-weight: 600; vertical-alignment: center; }
-                Text { text: "游戏显示模式"; color: Theme.muted; font-size: 11px; vertical-alignment: center; }
+                Text { text: root.build-label; color: Theme.muted; font-size: 11px; vertical-alignment: center; }
                 Rectangle { horizontal-stretch: 1; }
             }
             drag := TouchArea {

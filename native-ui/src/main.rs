@@ -952,6 +952,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let factory = chrome::select_backend()?;
     let window = factory.create(false)?;
     let panel = factory.create(true)?;
+    let version = env!("CARGO_PKG_VERSION");
+    let build_label = match option_env!("RESOLUTION_HUB_BUILD_CHANNEL") {
+        Some(channel) if !channel.is_empty() => format!("v{version} · {channel}"),
+        _ => format!("v{version}"),
+    };
+    window.set_build_label(build_label.clone().into());
+    panel.set_build_label(build_label.into());
     let manager = RuntimeManager::default();
     let mut state = AppState::new(manager.status());
     match preferences::load() {

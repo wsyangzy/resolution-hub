@@ -5,6 +5,40 @@ Resolution Hub 是 Windows 10/11 x64 游戏分辨率启动器，使用 Rust、Sl
 
 本项目由 Juice 借助 Codex 开发。当前已迁移为 Slint 原生界面，运行不再依赖 WebView2、Node.js 或浏览器前端。
 
+## 下载与构建
+
+从 [Nightly release](https://github.com/wsyangzy/resolution-hub/releases/tag/nightly)
+下载单个 `resolution-hub.exe` 后直接运行，无需解压或安装。
+图标和界面资源已内嵌，程序旁不需要 `build-info.json`、说明文件或其他附带文件。
+版本、来源提交、构建记录和 EXE SHA256 保存在发布页；发布资产仅提供这个 EXE。
+窗口标题显示版本，Nightly 构建额外标注 nightly 渠道；EXE 属性中保留统一版本号。
+新版沿用显示器与双箭头图形，主色改为蓝紫色，PNG 窗口图标与多尺寸 ICO 同步使用。
+便携版仍将用户数据保存在 `%APPDATA%\resolution-hub\`。
+
+三个工作流分别触发，构建步骤复用本地 composite action：
+
+| 工作流 | 触发条件 | 结果 |
+| --- | --- | --- |
+| [CI](https://github.com/wsyangzy/resolution-hub/actions/workflows/ci.yml) | `main` 推送、目标为 `main` 的 PR、手动 | 格式、测试、构建和 EXE 检查，保留验证产物 |
+| [Nightly](https://github.com/wsyangzy/resolution-hub/actions/workflows/nightly.yml) | 每日 02:23 UTC、手动选择 `main` | 有未发布变更时验证并更新 `nightly` 滚动预发布 |
+| [Release](https://github.com/wsyangzy/resolution-hub/actions/workflows/release.yml) | 推送 `v<版本>` 标签 | 标签与工作区版本一致时，验证并发布正式版 |
+
+Release 也可手动执行构建验证，手动运行不会发布正式版。正式发布前先更新根 Cargo 版本和锁文件，
+将改动合入 `main` 后再推送对应标签。已发布的正式版不覆盖，后续更新使用新版本标签。
+CI 不发布版本，普通分支推送不触发 Nightly 或 Release，既有稳定版标签保持不变。
+Nightly 先检查来源提交与发布资产，同一提交已有完整单 EXE 时跳过；手动运行可勾选 `force` 重建。
+发布缺失、仍为草稿或资产不完整时会重新构建，不能仅凭 `nightly` 标签存在就跳过。
+
+CI 先在独立快速任务中检查 Rust 格式和打包脚本，再在 Windows runner 上使用锁文件
+执行工作区 Release 测试和 Slint EXE 构建。测试步骤限时 40 分钟，EXE 构建限时 15 分钟，
+失败时保留对应日志；新 PR 推送会取消旧验证，`main` 的每次验证记录保留。
+发布前检查 x64 PE、GUI 子系统、图标、版本和 Common-Controls v6 清单，
+同时检查常规与延迟加载的 DLL 导入，拒绝依赖外部 VC++ 运行库的 EXE。
+Windows x64 构建统一静态链接 CRT；用户不需要额外安装 Visual C++ Redistributable。
+外部 Actions 固定到支持 Node.js 24 的提交；Dependabot 每周检查 Cargo 与 Actions 依赖，更新通过 PR 进入相同 CI。
+下载包在 Actions artifacts 中保留 30 天，可在新版本出现问题时取回上一次成功产物；
+替换程序前先结束会话并正常退出，保留用户数据，恢复失败时不要删除恢复点。
+
 ## 使用方式
 
 1. 在工作条或应用窗口中点击添加，选择 Steam、启动器、本地 EXE 或最近运行。
