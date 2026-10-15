@@ -1,0 +1,486 @@
+import { Motion, Theme } from "theme.slint";
+import { HubButton, PanelHeader, VScroll } from "components.slint";
+import { HubSelect, HubTextField } from "form-controls.slint";
+import { SourceEntry, SourceList } from "source-list.slint";
+export { SourceEntry }
+
+export struct NewGameDraft {
+    name: string,
+    source-kind: int,
+    executable: string,
+    steam-app-id: string,
+    shortcut-path: string,
+    launcher-provider: string,
+    process-name: string,
+    launcher-process-name: string,
+    arguments: string,
+    working-directory: string,
+    switch-timing: int,
+    wait-minutes: string,
+    restore-seconds: string,
+    display-index: int,
+    mode-index: int,
+}
+
+export component GameEditor inherits Rectangle {
+    in property <bool> active;
+    in property <bool> embedded;
+    in property <bool> enabled: true;
+    in property <bool> busy;
+    in property <bool> loaded;
+    in property <bool> dirty;
+    in property <string> busy-text;
+    in property <string> error;
+    in property <[string]> displays;
+    in property <[string]> modes;
+    in property <[SourceEntry]> source-entries;
+    in property <string> source-notice;
+    in property <bool> source-selected;
+    in property <string> source-detail;
+    in property <string> source-kind-label;
+    in-out property <string> steam-search;
+    in property <bool> launcher-ready;
+    in property <bool> detecting;
+    in property <bool> can-cancel-detection;
+    in property <string> detect-status;
+    in property <[SourceEntry]> candidates;
+    in-out property <NewGameDraft> draft;
+    callback edited(NewGameDraft);
+    callback executable-requested(bool);
+    callback shortcut-requested(bool);
+    callback source-chosen(int);
+    callback icon-requested(int);
+    callback search-changed(string);
+    callback refresh-sources;
+    callback detect-requested;
+    callback cancel-detection;
+    callback candidate-selected(int);
+    callback reload-requested;
+    callback save-requested;
+    callback cancel-requested;
+    callback dismissed;
+    private property <bool> advanced;
+    private property <float> advanced-progress: root.advanced ? 1 : 0;
+    private property <bool> editable: root.active && root.enabled && !root.busy;
+    private property <float> progress: root.active ? 1 : 0;
+    out property <bool> blocking: root.active || root.progress > 0;
+    out property <length> content-height: 138px + fields.min-height;
+    visible: root.blocking;
+    opacity: root.embedded ? 1 : root.progress;
+    background: root.embedded ? Theme.surface : Theme.scrim;
+    animate progress { duration: root.active ? Motion.enter : Motion.exit; easing: Motion.ease; }
+    animate advanced-progress { duration: root.advanced ? Motion.enter : Motion.exit; easing: Motion.ease; }
+    changed blocking => { if !root.blocking { root.dismissed(); } }
+    changed active => {
+        if root.active {
+            root.advanced = false;
+            body-scroll.offset-y = 0px;
+            form-keys.focus();
+        }
+    }
+    changed busy => { if !root.busy && root.active && root.enabled { form-keys.focus(); } }
+    changed loaded => { if root.loaded && root.active { root.focus-first(); } }
+    changed error => { if root.error != "" { body-scroll.offset-y = 0px; } }
+    changed detect-status => {
+        if root.active && root.detect-status != "" { body-scroll.reveal(process-block.y, process-block.height); }
+    }
+    public function focus-first() {
+        if root.editable && root.loaded { steam-tab.focus(); }
+        else { form-keys.focus(); }
+    }
+
+    TouchArea { enabled: root.blocking; }
+    form-keys := FocusScope {
+        enabled: root.active && root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                if root.can-cancel-detection { root.cancel-detection(); }
+                else if root.editable { root.cancel-requested(); }
+                return accept;
+            }
+            return reject;
+        }
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: root.embedded ? 0px : (parent.height - self.height) / 2 + (1 - root.progress) * 8px;
+            width: root.embedded ? parent.width : min(760px, parent.width - 32px);
+            height: root.embedded ? parent.height : min(700px, parent.height - 24px);
+            border-radius: root.embedded ? 10px : 14px;
+            border-width: root.embedded ? 0px : 1px;
+            border-color: Theme.border;
+            background: Theme.surface;
+            drop-shadow-blur: root.embedded ? 0px : 28px;
+            drop-shadow-offset-y: 10px;
+            drop-shadow-color: root.embedded ? transparent : Theme.shadow;
+            VerticalLayout {
+                spacing: 0px;
+                PanelHeader {
+                    title: "添加游戏";
+                    subtitle: "选择启动来源与主进程，再设置显示模式";
+                    enabled: root.active && root.enabled && (!root.busy || root.can-cancel-detection);
+                    closed => {
+                        if root.can-cancel-detection { root.cancel-detection(); }
+                        else { root.cancel-requested(); }
+                    }
+                }
+                Rectangle {
+                    min-height: 0px;
+                    vertical-stretch: 1;
+                    body-scroll := VScroll {
+                        x: 18px; y: 12px; width: parent.width - 36px; height: max(0px, parent.height - 24px);
+                        enabled: root.active && root.enabled;
+                        content-height: fields.min-height;
+                        fields := VerticalLayout {
+                            x: 0px; y: 0px;
+                            width: body-scroll.content-width;
+                            height: self.min-height;
+                            spacing: 10px;
+                            if root.error != "": Rectangle {
+                                border-radius: 8px;
+                                background: Theme.error-soft;
+                                HorizontalLayout {
+                                    padding: 10px; spacing: 8px;
+                                    cross-axis-alignment: center;
+                                    Text { text: root.error; font-size: 12px; color: Theme.error; wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
+                                    HubButton {
+                                        text: "重新读取"; compact: true; flat: true;
+                                        enabled: root.editable;
+                                        clicked => { root.reload-requested(); }
+                                    }
+                                }
+                            }
+                            Text { text: "01  启动来源与进程"; color: Theme.text; font-size: 13px; font-weight: 600; }
+                            Rectangle {
+                                height: 38px; border-radius: 9px; background: Theme.raised;
+                                HorizontalLayout {
+                                x: 0px; y: 0px; width: parent.width; height: parent.height;
+                                padding: 3px; spacing: 3px;
+                                cross-axis-alignment: center;
+                                steam-tab := HubButton {
+                                    text: "Steam"; fill-width: true; compact: true;
+                                    flat: true; selected: root.draft.source-kind == 0;
+                                    enabled: root.editable && root.loaded;
+                                    clicked => { root.draft.source-kind = 0; root.edited(root.draft); }
+                                }
+                                for title[index] in ["启动器", "本地 EXE", "最近运行"]: HubButton {
+                                    text: title; fill-width: true; compact: true;
+                                    flat: true; selected: root.draft.source-kind == index + 1;
+                                    label: title + (root.draft.source-kind == index + 1 ? "，已选择" : "");
+                                    enabled: root.editable && root.loaded;
+                                    clicked => { root.draft.source-kind = index + 1; root.edited(root.draft); }
+                                }
+                                }
+                            }
+                            source-block := VerticalLayout {
+                                spacing: 8px;
+                                if root.draft.source-kind == 0 || root.draft.source-kind == 3: VerticalLayout {
+                                    spacing: 8px;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        cross-axis-alignment: center;
+                                        if root.draft.source-kind == 0: HubTextField {
+                                            text <=> root.steam-search;
+                                            placeholder: "搜索已安装的 Steam 游戏或 App ID";
+                                            label: "搜索 Steam 游戏";
+                                            enabled: root.editable && root.loaded;
+                                            edited(value) => { root.steam-search = value; root.search-changed(value); }
+                                            focused => { body-scroll.reveal(source-block.y, 48px); }
+                                        }
+                                        if root.draft.source-kind == 3: Text {
+                                            text: "最近出现过窗口的应用"; color: Theme.secondary; font-size: 12px;
+                                            vertical-alignment: center; horizontal-stretch: 1;
+                                        }
+                                        HubButton {
+                                            text: "刷新"; icon: "refresh"; compact: true;
+                                            enabled: root.editable && root.loaded;
+                                            clicked => { root.refresh-sources(); }
+                                        }
+                                    }
+                                    SourceList {
+                                        active: root.active;
+                                        entries: root.source-entries;
+                                        notice: root.source-notice;
+                                        reset-key: root.draft.source-kind + ":" + root.steam-search;
+                                        label: root.draft.source-kind == 0 ? "Steam 游戏库" : "最近运行的应用";
+                                        enabled: root.editable && root.loaded;
+                                        selected(index) => { root.source-chosen(index); }
+                                        icon-requested(id) => { root.icon-requested(id); }
+                                        focused => { body-scroll.reveal(source-block.y, source-block.height); }
+                                    }
+                                }
+                                if root.draft.source-kind == 1: HorizontalLayout {
+                                    spacing: 12px;
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        HubButton {
+                                            text: "无畏契约"; icon: "shield"; fill-width: true;
+                                            enabled: root.editable && root.loaded;
+                                            clicked => { root.shortcut-requested(true); }
+                                        }
+                                        Text { text: "选择 Riot / VALORANT 快捷方式"; color: Theme.muted; font-size: 11px; wrap: word-wrap; }
+                                    }
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        HubButton {
+                                            text: "其他启动器"; fill-width: true;
+                                            enabled: root.editable && root.loaded;
+                                            clicked => { root.shortcut-requested(false); }
+                                        }
+                                        Text { text: "选择 .lnk 或 .url 快捷方式"; color: Theme.muted; font-size: 11px; wrap: word-wrap; }
+                                    }
+                                }
+                                if root.draft.source-kind == 2: HubButton {
+                                    text: "选择游戏可执行文件"; icon: "plus"; fill-width: true;
+                                    enabled: root.editable && root.loaded;
+                                    clicked => { root.executable-requested(true); }
+                                }
+                            }
+                            if root.source-selected: Rectangle {
+                                border-radius: 8px;
+                                background: Theme.accent-soft;
+                                VerticalLayout {
+                                    padding: 10px; spacing: 4px;
+                                    Text { text: root.draft.name + "  ·  " + root.source-kind-label; color: Theme.accent; font-size: 12px; font-weight: 600; overflow: elide; }
+                                    Text { text: root.source-detail; color: Theme.secondary; font-size: 11px; overflow: elide; }
+                                }
+                            }
+                            name-block := VerticalLayout {
+                                spacing: 6px;
+                                Text { text: "游戏名称"; font-size: 12px; color: Theme.secondary; }
+                                HubTextField {
+                                    text <=> root.draft.name; placeholder: "例如：Counter-Strike 2"; label: "游戏名称";
+                                    enabled: root.editable && root.loaded;
+                                    edited(value) => { root.draft.name = value; root.edited(root.draft); }
+                                    focused => { body-scroll.reveal(name-block.y, name-block.height); }
+                                }
+                            }
+                            process-block := VerticalLayout {
+                                spacing: 6px;
+                                Text { text: "游戏主进程"; font-size: 12px; color: Theme.secondary; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    cross-axis-alignment: center;
+                                    HubTextField {
+                                        text <=> root.draft.process-name; placeholder: "例如：cs2.exe"; label: "游戏主进程";
+                                        enabled: root.editable && root.loaded;
+                                        edited(value) => { root.draft.process-name = value; root.edited(root.draft); }
+                                        focused => { body-scroll.reveal(process-block.y, 64px); }
+                                    }
+                                    HubButton {
+                                        text: root.can-cancel-detection ? "取消识别" : root.detecting ? "请稍候…"
+                                            : root.draft.source-kind == 1 ? (root.launcher-ready ? "开始识别" : "打开启动器") : "启动并识别";
+                                        icon: root.can-cancel-detection ? "stop" : "play";
+                                        enabled: root.active && root.enabled && (root.can-cancel-detection || (root.editable && root.loaded));
+                                        clicked => {
+                                            if root.can-cancel-detection { root.cancel-detection(); }
+                                            else { root.detect-requested(); }
+                                        }
+                                    }
+                                }
+                                Text {
+                                    text: root.draft.source-kind == 1
+                                        ? (root.launcher-ready ? "完成登录和更新后，先点击“开始识别”，再从启动器进入游戏。"
+                                            : "先打开启动器并完成登录或更新，再识别实际游戏主进程。")
+                                        : "可手动填写，也可点击“启动并识别”后正常进入游戏。识别期间不会切换分辨率。";
+                                    color: Theme.muted; font-size: 11px; wrap: word-wrap;
+                                }
+                                if root.detect-status != "": Text {
+                                    text: root.detect-status; color: Theme.accent; font-size: 12px; wrap: word-wrap;
+                                }
+                                if root.candidates.length > 0: SourceList {
+                                    active: root.active;
+                                    entries: root.candidates; label: "候选游戏主进程";
+                                    reset-key: root.detect-status;
+                                    enabled: root.editable;
+                                    selected(index) => { root.candidate-selected(index); }
+                                    icon-requested(id) => { root.icon-requested(id); }
+                                    focused => { body-scroll.reveal(process-block.y, process-block.height); }
+                                }
+                            }
+                            Rectangle { height: 1px; background: Theme.border; }
+                            display-block := VerticalLayout {
+                                spacing: 8px;
+                                HorizontalLayout {
+                                    cross-axis-alignment: center;
+                                    Text { text: "02  显示模式与恢复"; font-size: 13px; font-weight: 600; color: Theme.text; vertical-alignment: center; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    HubButton {
+                                        text: "重新读取"; icon: "refresh"; compact: true; flat: true;
+                                        enabled: root.editable;
+                                        clicked => { root.reload-requested(); }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: "目标显示器"; font-size: 12px; color: Theme.secondary; }
+                                        HubSelect {
+                                            options: root.displays; current-index: root.draft.display-index;
+                                            placeholder: "选择显示器"; label: "目标显示器";
+                                            enabled: root.editable && root.loaded;
+                                            selected(index) => { root.draft.display-index = index; root.edited(root.draft); }
+                                            focused => { body-scroll.reveal(display-block.y, display-block.height); }
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: "分辨率与刷新率"; font-size: 12px; color: Theme.secondary; }
+                                        HubSelect {
+                                            options: root.modes; current-index: root.draft.mode-index;
+                                            placeholder: "选择显示模式"; label: "分辨率与刷新率";
+                                            enabled: root.editable && root.loaded;
+                                            selected(index) => { root.draft.mode-index = index; root.edited(root.draft); }
+                                            focused => { body-scroll.reveal(display-block.y, display-block.height); }
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        width: 120px; spacing: 6px;
+                                        Text { text: "恢复延迟（秒）"; font-size: 12px; color: Theme.secondary; }
+                                        HubTextField {
+                                            text <=> root.draft.restore-seconds; placeholder: "0～30"; label: "退出后恢复延迟，秒";
+                                            enabled: root.editable && root.loaded;
+                                            edited(value) => { root.draft.restore-seconds = value; root.edited(root.draft); }
+                                            focused => { body-scroll.reveal(display-block.y, display-block.height); }
+                                        }
+                                    }
+                                }
+                            }
+                            Rectangle { height: 1px; background: Theme.border; }
+                            HorizontalLayout {
+                                cross-axis-alignment: center;
+                                HubButton {
+                                    text: "03  高级启动设置"; icon: root.advanced ? "chevron-up" : "chevron-down";
+                                    compact: true; flat: true; enabled: root.editable && root.loaded;
+                                    clicked => { root.advanced = !root.advanced; }
+                                }
+                                Text { text: "启动路径、切换时机与等待上限"; color: Theme.muted; font-size: 11px; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            advanced-panel := Rectangle {
+                                height: root.advanced ? advanced-fields.min-height : 0px;
+                                opacity: root.advanced-progress;
+                                clip: true;
+                                visible: root.advanced || root.advanced-progress > 0;
+                                advanced-fields := VerticalLayout {
+                                    x: 0px; y: 0px; width: parent.width; height: self.min-height; spacing: 10px;
+                                    path-block := VerticalLayout {
+                                        spacing: 6px;
+                                        Text {
+                                            text: root.draft.source-kind == 0 ? "Steam App ID" : root.draft.source-kind == 1 ? "启动器或游戏快捷方式" : "游戏 EXE";
+                                            color: Theme.secondary; font-size: 12px;
+                                        }
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            cross-axis-alignment: center;
+                                            if root.draft.source-kind == 0: HubTextField {
+                                                text <=> root.draft.steam-app-id; label: "Steam App ID"; placeholder: "例如：730";
+                                                enabled: root.editable && root.advanced;
+                                                edited(value) => { root.draft.steam-app-id = value; root.edited(root.draft); }
+                                                focused => { body-scroll.reveal(advanced-panel.y + path-block.y, path-block.height); }
+                                            }
+                                            if root.draft.source-kind == 1: HubTextField {
+                                                text <=> root.draft.shortcut-path; label: "启动器快捷方式路径"; placeholder: ".lnk 或 .url";
+                                                enabled: root.editable && root.advanced;
+                                                edited(value) => { root.draft.shortcut-path = value; root.edited(root.draft); }
+                                                focused => { body-scroll.reveal(advanced-panel.y + path-block.y, path-block.height); }
+                                            }
+                                            if root.draft.source-kind >= 2: HubTextField {
+                                                text <=> root.draft.executable; label: "游戏 EXE 路径"; placeholder: "选择游戏可执行文件";
+                                                enabled: root.editable && root.advanced;
+                                                edited(value) => { root.draft.executable = value; root.edited(root.draft); }
+                                                focused => { body-scroll.reveal(advanced-panel.y + path-block.y, path-block.height); }
+                                            }
+                                            if root.draft.source-kind != 0: HubButton {
+                                                text: "浏览…"; enabled: root.editable && root.advanced;
+                                                clicked => {
+                                                    if root.draft.source-kind == 1 { root.shortcut-requested(root.draft.launcher-provider == "Riot Client"); }
+                                                    else { root.executable-requested(false); }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if root.draft.source-kind >= 2: arguments-block := VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: "启动参数"; color: Theme.secondary; font-size: 12px; }
+                                        HubTextField {
+                                            text <=> root.draft.arguments; label: "启动参数"; placeholder: "可选";
+                                            enabled: root.editable && root.advanced;
+                                            edited(value) => { root.draft.arguments = value; root.edited(root.draft); }
+                                            focused => { body-scroll.reveal(advanced-panel.y + arguments-block.y, arguments-block.height); }
+                                        }
+                                    }
+                                    if root.draft.source-kind >= 2: directory-block := VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: "工作目录"; color: Theme.secondary; font-size: 12px; }
+                                        HubTextField {
+                                            text <=> root.draft.working-directory; label: "工作目录"; placeholder: "默认使用 EXE 所在目录";
+                                            enabled: root.editable && root.advanced;
+                                            edited(value) => { root.draft.working-directory = value; root.edited(root.draft); }
+                                            focused => { body-scroll.reveal(advanced-panel.y + directory-block.y, directory-block.height); }
+                                        }
+                                    }
+                                    if root.draft.source-kind == 1: launcher-block := VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: "启动器进程（可选）"; color: Theme.secondary; font-size: 12px; }
+                                        HubTextField {
+                                            text <=> root.draft.launcher-process-name; label: "启动器进程";
+                                            placeholder: "例如：RiotClientServices.exe；留空时自动解析 .lnk";
+                                            enabled: root.editable && root.advanced;
+                                            edited(value) => { root.draft.launcher-process-name = value; root.edited(root.draft); }
+                                            focused => { body-scroll.reveal(advanced-panel.y + launcher-block.y, launcher-block.height); }
+                                        }
+                                        Text { text: "用于复用已运行的启动器；游戏启动与退出仍以游戏主进程为准。"; color: Theme.muted; font-size: 11px; wrap: word-wrap; }
+                                    }
+                                    timing-block := HorizontalLayout {
+                                        spacing: 12px;
+                                        VerticalLayout {
+                                            spacing: 6px;
+                                            Text { text: "分辨率切换时机"; color: Theme.secondary; font-size: 12px; }
+                                            HubSelect {
+                                                options: ["启动命令之前", "检测到游戏进程时"]; current-index: root.draft.switch-timing;
+                                                label: "分辨率切换时机"; enabled: root.editable && root.advanced;
+                                                selected(index) => { root.draft.switch-timing = index; root.edited(root.draft); }
+                                                focused => { body-scroll.reveal(advanced-panel.y + timing-block.y, timing-block.height); }
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            spacing: 6px;
+                                            Text { text: "等待游戏启动（分钟）"; color: Theme.secondary; font-size: 12px; }
+                                            HubTextField {
+                                                text <=> root.draft.wait-minutes; placeholder: "1～60"; label: "等待游戏启动，分钟";
+                                                enabled: root.editable && root.advanced;
+                                                edited(value) => { root.draft.wait-minutes = value; root.edited(root.draft); }
+                                                focused => { body-scroll.reveal(advanced-panel.y + timing-block.y, timing-block.height); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 54px;
+                    background: Theme.canvas;
+                    Rectangle { x: 0px; y: 0px; width: parent.width; height: 1px; background: Theme.border; }
+                    HorizontalLayout {
+                        x: 18px; y: 9px; width: parent.width - 36px; height: 36px; spacing: 8px;
+                        cross-axis-alignment: center;
+                        Text {
+                            text: root.busy ? root.busy-text : root.dirty ? "有未保存更改" : "尚未保存";
+                            font-size: 11px; color: root.dirty ? Theme.warning : Theme.muted;
+                            wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1;
+                        }
+                        HubButton { text: "取消"; enabled: root.editable; clicked => { root.cancel-requested(); } }
+                        HubButton {
+                            primary: true; text: root.busy ? "请稍候…" : "保存配置";
+                            enabled: root.editable && root.loaded;
+                            clicked => { root.save-requested(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

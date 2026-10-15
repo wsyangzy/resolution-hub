@@ -1,0 +1,108 @@
+import { Motion, Theme } from "theme.slint";
+import { GameIcon, VScroll } from "components.slint";
+
+export struct SourceEntry {
+    index: int,
+    title: string,
+    detail: string,
+    meta: string,
+    selected: bool,
+    icon-id: int,
+    icon: image,
+}
+
+// Slint 1.17 通过 ListView 名称及这五个属性启用原生列表虚拟化。
+// 沿用应用的滚动条，只让框架管理行的创建、位置和模型订阅。
+component ListView inherits VScroll {
+    in-out property <length> viewport-y <=> root.offset-y;
+    in-out property <length> viewport-height <=> root.content-height;
+    in-out property <length> viewport-width <=> root.content-width;
+    out property <length> visible-height: root.height;
+    out property <length> visible-width: max(0px, root.width - 12px);
+}
+
+export component SourceList inherits Rectangle {
+    in property <[SourceEntry]> entries;
+    in property <bool> active: true;
+    in property <bool> enabled: true;
+    in property <string> label;
+    in property <string> reset-key;
+    in property <string> notice;
+    callback selected(int);
+    callback icon-requested(int);
+    callback focused;
+    private property <int> highlighted: 0;
+    height: root.entries.length == 0 ? 48px : min(3, root.entries.length) * 48px + 8px;
+    border-radius: 8px; border-width: 1px;
+    border-color: keys.has-focus ? Theme.accent : Theme.border;
+    background: Theme.canvas;
+    forward-focus: keys;
+    accessible-role: list;
+    accessible-label: root.label;
+    animate border-color { duration: Motion.feedback; }
+    changed reset-key => { root.highlighted = 0; scroll.offset-y = 0px; }
+    changed entries => { root.highlighted = max(0, min(root.highlighted, root.entries.length - 1)); }
+    changed highlighted => { scroll.reveal(root.highlighted * 48px, 48px); }
+    keys := FocusScope {
+        enabled: root.active && root.enabled && root.entries.length > 0;
+        focus-changed-event => { if self.has-focus { root.focused(); } }
+        key-pressed(event) => {
+            if event.text == Key.UpArrow { root.highlighted = max(0, root.highlighted - 1); return accept; }
+            if event.text == Key.DownArrow { root.highlighted = min(root.entries.length - 1, root.highlighted + 1); return accept; }
+            if event.text == Key.Home { root.highlighted = 0; return accept; }
+            if event.text == Key.End { root.highlighted = root.entries.length - 1; return accept; }
+            if (event.text == "\n" || event.text == " ") && root.highlighted < root.entries.length {
+                root.selected(root.entries[root.highlighted].index); return accept;
+            }
+            return reject;
+        }
+        scroll := ListView {
+            x: 4px; y: 4px; width: parent.width - 8px; height: parent.height - 8px;
+            enabled: root.active && root.enabled;
+            for entry[position] in (root.active ? root.entries : []): Rectangle {
+                // 框架直接保留仍在视口中的行，不因 first-row 变化重绑整组数据。
+                height: 48px;
+                Rectangle {
+                    x: 0px; y: 0px; width: parent.width; height: 46px;
+                    border-radius: 6px; border-width: 1px;
+                    border-color: keys.has-focus && root.highlighted == position ? Theme.accent-border : transparent;
+                    background: touch.pressed && root.enabled ? Theme.selection-pressed
+                        : entry.selected ? Theme.accent-soft : touch.has-hover && root.enabled ? Theme.surface : transparent;
+                    // 滚动换行不启动颜色补间；命中反馈即时生效，平滑位移仍交给 Flickable。
+                    accessible-role: button;
+                    accessible-label: entry.title + "，" + entry.detail + "，" + entry.meta + (entry.selected ? "，已选择" : "");
+                    accessible-enabled: root.enabled;
+                    accessible-action-default => { if root.enabled { root.selected(entry.index); } }
+                    // 固定高度行无需嵌套布局求解，文本换成显式边界后不会挤压图标。
+                    GameIcon {
+                        x: 8px; y: 9px; width: 28px; height: 28px;
+                        source: entry.icon; icon-id: entry.icon-id; selected: entry.selected;
+                        requested(id) => { root.icon-requested(id); }
+                    }
+                    Text {
+                        x: 46px; y: 6px; width: max(0px, meta.x - self.x - 10px); height: 18px;
+                        text: entry.title; color: Theme.text; font-size: 12px; font-weight: 600; overflow: elide;
+                    }
+                    Text {
+                        x: 46px; y: 25px; width: max(0px, meta.x - self.x - 10px); height: 15px;
+                        text: entry.detail; color: Theme.muted; font-size: 10px; overflow: elide;
+                    }
+                    meta := Text {
+                        x: parent.width - 10px - self.width; y: 0px;
+                        width: entry.meta == "" ? 0px : min(120px, max(0px, parent.width - 64px) / 3); height: parent.height;
+                        text: entry.meta; color: entry.selected ? Theme.accent : Theme.secondary;
+                        font-size: 10px; overflow: elide; horizontal-alignment: right; vertical-alignment: center;
+                    }
+                    touch := TouchArea {
+                        enabled: root.enabled; mouse-cursor: pointer;
+                        clicked => { root.highlighted = position; keys.focus(); root.selected(entry.index); }
+                    }
+                }
+            }
+        }
+    }
+    if root.entries.length == 0: Text {
+        x: 12px; y: 6px; width: parent.width - 24px; height: parent.height - 12px;
+        text: root.notice; color: Theme.muted; font-size: 11px; wrap: word-wrap; vertical-alignment: center;
+    }
+}

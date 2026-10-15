@@ -1,6 +1,13 @@
+/target
+.cargo-target/
+/artifacts
+*.log
+
+# 迁移前留下的本地缓存不纳入 Git，也不作为源码清理的一部分删除。
 /node_modules
+/frontend/node_modules
+/dist
 /dist-portable
+/coverage
 /src-tauri/gen
 /src-tauri/target
-/target
-*.log

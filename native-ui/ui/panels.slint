@@ -1,0 +1,189 @@
+import { Motion, Theme } from "theme.slint";
+import { ActionArea, FocusRing, GameEntry, GameSelector, Glyph, HubButton, PanelHeader, SessionStep, StatusBadge, StepConnector, VScroll } from "components.slint";
+
+export component LibraryPanel inherits Rectangle {
+    in property <bool> active;
+    in property <bool> embedded;
+    in property <bool> browse-enabled;
+    in property <bool> details-enabled;
+    in property <bool> add-enabled;
+    in property <bool> session-active;
+    in property <[GameEntry]> entries;
+    in property <int> selected-index: -1;
+    out property <length> content-height: 96px + (root.entries.length == 0 ? 104px : min(7, root.entries.length) * 52px);
+    callback closed;
+    callback added;
+    callback refreshed;
+    callback selected(int);
+    callback activated(int);
+    callback details-requested(int);
+    callback icon-requested(int);
+    background: Theme.surface;
+    public function focus-list() {
+        if root.entries.length > 0 { selector.focus-list(); }
+        else { header.focus-add(); }
+    }
+    VerticalLayout {
+        x: 0px; y: 0px; width: parent.width; height: parent.height; spacing: 0px;
+        header := PanelHeader {
+            title: "游戏库  ·  " + root.entries.length;
+            enabled: root.active;
+            add-visible: !root.embedded || root.entries.length == 0; add-enabled: root.add-enabled;
+            refresh-visible: true; refresh-enabled: root.browse-enabled;
+            close-visible: !root.embedded;
+            closed => { root.closed(); }
+            added => { root.added(); }
+            refreshed => { root.refreshed(); }
+        }
+        Rectangle {
+            min-height: 0px; vertical-stretch: 1;
+            selector := GameSelector {
+                x: 8px; y: 6px; width: parent.width - 16px; height: max(0px, parent.height - 12px);
+                active: root.active; entries: root.entries; selected-index: root.selected-index;
+                enabled: root.active && root.browse-enabled; details-enabled: root.active && root.details-enabled;
+                selected(index) => { root.selected(index); }
+                activated(index) => { root.activated(index); }
+                details-requested(index) => { root.details-requested(index); }
+                icon-requested(id) => { root.icon-requested(id); }
+            }
+        }
+        Rectangle {
+            height: 32px;
+            Text {
+                x: 16px; y: 0px; width: parent.width - 32px; height: parent.height;
+                text: root.session-active ? "会话进行中，可查看当前游戏详情" : "点击选择游戏，右侧查看详情";
+                color: Theme.muted; font-size: 11px; overflow: elide; vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// 嵌入游戏详情的紧凑会话区，内容高度由实际消息决定。
+export component SessionSummary inherits Rectangle {
+    in property <string> title;
+    in property <string> message;
+    in property <string> phase;
+    in property <bool> error;
+    in property <color> tint;
+    in property <bool> recovery-visible;
+    in property <string> recovery-message;
+    in property <bool> session-active;
+    in property <string> display;
+    height: content.min-height;
+    vertical-stretch: 0;
+    content := VerticalLayout {
+        x: 0px; y: 0px; width: parent.width; height: self.min-height; spacing: 8px;
+        HorizontalLayout {
+            spacing: 10px; cross-axis-alignment: center;
+            StatusBadge { text: root.title; tint: root.tint; }
+            if root.display != "": HorizontalLayout {
+                spacing: 6px; cross-axis-alignment: center;
+                Glyph { width: 16px; height: 16px; name: "monitor"; color: Theme.muted; }
+                Text { text: root.display; color: Theme.secondary; font-size: 11px; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+            }
+        }
+        if root.message != "" && (root.error || root.message != root.title): Text {
+            text: root.message;
+            color: root.error ? Theme.error : Theme.secondary; font-size: 12px; wrap: word-wrap;
+        }
+        if root.recovery-visible: Rectangle {
+            border-radius: 6px; background: Theme.warning-soft;
+            VerticalLayout {
+                padding: 10px;
+                Text { text: root.recovery-message; color: Theme.warning; font-size: 12px; wrap: word-wrap; }
+            }
+        }
+        if root.session-active: HorizontalLayout {
+            spacing: 4px;
+            SessionStep { number: "1"; text: "准备启动"; active: root.phase == "preparing" || root.phase == "switching" || root.phase == "launching"; }
+            StepConnector { width: 8px; }
+            SessionStep { number: "2"; text: "守候游戏"; active: root.phase == "waiting" || root.phase == "running"; }
+            StepConnector { width: 8px; }
+            SessionStep { number: "3"; text: "恢复桌面"; active: root.phase == "restoring"; }
+        }
+    }
+}
+
+component LayoutOption inherits Rectangle {
+    in property <bool> selected;
+    in property <bool> enabled;
+    in property <bool> toolbar;
+    callback chosen;
+    height: 78px;
+    vertical-stretch: 0;
+    border-radius: 8px; border-width: 1px;
+    // 选中由底色与勾选表达，边框保留中性色；蓝色描边只用于键盘导航。
+    border-color: action.hovered ? Theme.border-strong : Theme.border;
+    background: !root.enabled ? Theme.canvas
+        : action.pressed ? (root.selected ? Theme.selection-pressed : Theme.raised)
+        : root.selected ? Theme.accent-soft : action.hovered ? Theme.canvas : Theme.surface;
+    animate background, border-color { duration: Motion.feedback; }
+    accessible-role: button;
+    accessible-label: (root.toolbar ? "工作条" : "应用窗口") + (root.selected ? "，已选择" : "");
+    accessible-enabled: root.enabled;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-action-default => { if root.enabled { root.chosen(); } }
+    forward-focus: action;
+    HorizontalLayout {
+        x: 0px; y: 0px; width: parent.width; height: parent.height;
+        padding: 14px; spacing: 12px;
+        cross-axis-alignment: center;
+        Rectangle {
+            width: 40px; height: 40px; border-radius: 8px;
+            background: root.selected ? Theme.surface.with-alpha(0.75) : Theme.canvas;
+            Glyph { x: 8px; y: (parent.height - self.height) / 2; width: 24px; height: 24px; name: root.toolbar ? "toolbar" : "window"; color: root.selected ? Theme.accent : Theme.secondary; }
+        }
+        VerticalLayout {
+            spacing: 5px; horizontal-stretch: 1; alignment: center;
+            Text { text: root.toolbar ? "工作条" : "应用窗口"; color: Theme.text; font-size: 13px; font-weight: 600; }
+            Text { text: root.toolbar ? "小巧常驻，点击工具展开面板" : "游戏列表常驻，可调整窗口大小"; color: Theme.secondary; font-size: 11px; overflow: elide; }
+        }
+        Rectangle {
+            width: 20px; height: 20px; border-radius: 10px;
+            border-width: 1px; border-color: root.selected ? Theme.accent : Theme.border-strong;
+            background: root.selected ? Theme.accent : Theme.surface;
+            Glyph { x: 3px; y: 3px; width: 14px; height: 14px; name: "check"; color: Theme.accent-ink; visible: root.selected; }
+        }
+    }
+    FocusRing {
+        x: 0px; y: 0px; width: parent.width; height: parent.height;
+        active: action.focus-visible; radius: root.border-radius;
+    }
+    action := ActionArea {
+        x: 0px; y: 0px; width: parent.width; height: parent.height;
+        enabled: root.enabled;
+        activated => { root.chosen(); }
+    }
+}
+
+export component AppearancePanel inherits Rectangle {
+    in property <bool> active;
+    in property <bool> window-mode;
+    in property <string> notice;
+    out property <length> content-height: 72px + content.min-height;
+    callback chosen(bool);
+    callback closed;
+    background: Theme.surface;
+    public function focus-close() { header.focus-close(); }
+    VerticalLayout {
+        x: 0px; y: 0px; width: parent.width; height: parent.height; spacing: 0px;
+        header := PanelHeader { title: "界面布局"; enabled: root.active; closed => { root.closed(); } }
+        Rectangle {
+            min-height: 0px; vertical-stretch: 1;
+            scroll := VScroll {
+                x: 14px; y: 12px; width: parent.width - 28px; height: max(0px, parent.height - 24px);
+                content-height: content.min-height; enabled: root.active;
+                content := VerticalLayout {
+                    x: 0px; y: 0px; width: scroll.content-width; height: self.min-height; spacing: 8px;
+                    LayoutOption { toolbar: true; selected: !root.window-mode; enabled: root.active; chosen => { root.chosen(false); } }
+                    LayoutOption { toolbar: false; selected: root.window-mode; enabled: root.active; chosen => { root.chosen(true); } }
+                    Text {
+                        text: root.notice != "" ? root.notice : "自动记住所选布局，切换时保留当前游戏与会话。";
+                        color: root.notice != "" ? Theme.warning : Theme.muted; font-size: 11px; wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+}

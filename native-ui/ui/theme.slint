@@ -1,0 +1,39 @@
+export global Theme {
+    out property <color> canvas: #f8f9fb;
+    out property <color> sidebar: #f3f5f8;
+    out property <color> surface: #ffffff;
+    out property <color> raised: #edf0f5;
+    out property <color> border: #e1e5ec;
+    out property <color> border-strong: #cbd2de;
+    out property <color> text: #242b38;
+    out property <color> secondary: #5b6575;
+    out property <color> muted: #647083;
+    out property <color> disabled-text: #939baa;
+    out property <color> disabled-surface: #e9edf3;
+    out property <color> accent: #2860df;
+    out property <color> accent-ink: #ffffff;
+    out property <color> accent-soft: #eaf0ff;
+    out property <color> accent-border: #cbd9fb;
+    out property <color> selection-pressed: #e0e9fb;
+    out property <color> avatar: #e5e9f0;
+    out property <color> success: #287452;
+    out property <color> warning: #945a12;
+    out property <color> warning-soft: #fff5e5;
+    out property <color> error: #bd3d46;
+    out property <color> error-soft: #fff0f1;
+    out property <color> scrim: #18253d38;
+    out property <color> shadow: #1d2e4a24;
+    out property <length> control-height: 36px;
+    out property <length> compact-control-height: 32px;
+    out property <length> control-radius: 6px;
+    out property <string> display-font: "Segoe UI";
+}
+
+export global Motion {
+    in-out property <bool> enabled: true;
+    out property <duration> feedback: root.enabled ? 120ms : 0ms;
+    out property <duration> press: root.enabled ? 65ms : 0ms;
+    out property <duration> enter: root.enabled ? 180ms : 0ms;
+    out property <duration> exit: root.enabled ? 100ms : 0ms;
+    out property <easing> ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
