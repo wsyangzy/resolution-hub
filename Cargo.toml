@@ -1,6 +1,12 @@
 [workspace]
-members = ["src-tauri", "native-ui"]
+members = ["core", "native-ui"]
+default-members = ["native-ui"]
 resolver = "2"
+
+[workspace.package]
+version = "0.1.1"
+edition = "2024"
+license = "MIT"
 
 # 原生界面的生成代码参与每帧布局；保留调试符号，单独优化该包的 dev 构建。
 [profile.dev.package.resolution-hub-native-ui]

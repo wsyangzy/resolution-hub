@@ -20,7 +20,7 @@ use std::{
 
 use editor::{DetectionAction, DetectionResult, FileChoice};
 use preferences::ViewMode;
-use resolution_hub_lib::{
+use resolution_hub_core::{
     detector, dialog, display, launcher,
     model::{GameProfile, LaunchType, SwitchTiming},
     profile, recent,

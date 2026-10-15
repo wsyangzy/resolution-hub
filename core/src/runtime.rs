@@ -7,8 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tauri::{AppHandle, Emitter};
-
 use crate::{
     display, launcher,
     model::{DisplayMode, GameProfile, PendingRestore, RuntimeStatus, SwitchTiming},
@@ -80,15 +78,6 @@ impl RuntimeManager {
             })
     }
 
-    pub fn start(&self, profile: GameProfile, app: AppHandle) -> Result<(), String> {
-        let sink = tauri_status_sink(app.clone());
-        let result = self.start_with_sink(profile, sink);
-        if result.is_ok() {
-            crate::tray::refresh_games(&app);
-        }
-        result
-    }
-
     pub fn start_with_sink(&self, profile: GameProfile, sink: StatusSink) -> Result<(), String> {
         let generation = {
             let mut status = self
@@ -124,11 +113,7 @@ impl RuntimeManager {
     }
 
     /// 结束当前会话并恢复桌面显示模式。守候阶段没有恢复点时恢复本身是空操作，
-    /// 所以这也是「退出专注页」唯一需要的动作。
-    pub fn restore_now(&self, app: &AppHandle) -> Result<(), String> {
-        self.restore_now_with_sink(tauri_status_sink(app.clone()))
-    }
-
+    /// 通过同一入口停止守候，状态通知由界面提供的 sink 接收。
     pub fn restore_now_with_sink(&self, sink: StatusSink) -> Result<(), String> {
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.set_status_unchecked(
@@ -595,13 +580,6 @@ impl RuntimeManager {
         let status = self.status();
         sink(status);
     }
-}
-
-fn tauri_status_sink(app: AppHandle) -> StatusSink {
-    Arc::new(move |status| {
-        crate::tray::update_status(&app, &status);
-        let _ = app.emit("runtime-status", status);
-    })
 }
 
 fn target_mode(game: &GameProfile) -> DisplayMode {

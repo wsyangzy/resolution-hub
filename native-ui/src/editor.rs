@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use resolution_hub_lib::{
+use resolution_hub_core::{
     display,
     model::{
         ApplicationIconRequest, DetectLaunchRequest, DisplayInfo, DisplayMode, GameProfile,

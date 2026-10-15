@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use resolution_hub_lib::model::ApplicationIconRequest;
+use resolution_hub_core::model::ApplicationIconRequest;
 use slint::{Model, ModelRc, VecModel};
 
 use crate::{AppWindow, GameEntry, SourceEntry, editor::EditorState, icons, state::AppState};

@@ -2,97 +2,76 @@
 
 # Resolution Hub 项目指南
 
-Resolution Hub 是 Windows 专用的游戏分辨率启动器。它在启动游戏前或检测到游戏主进程后切换目标显示模式，并在游戏退出后恢复桌面显示模式。
-
-技术栈：Rust 2024、Tauri 2、windows-rs 0.62、React 19、Vite 8、TypeScript、Tailwind CSS 4。产品目标平台是 Windows 10/11 x64；未明确要求时，不要为其他平台增加抽象或兼容层。
+Resolution Hub 是 Windows 专用的游戏分辨率启动器。技术栈为 Rust 2024、Slint 1.17、
+windows-rs 0.62；产品目标是 Windows 10/11 x64。未明确要求时，不增加其他平台适配层。
+React/Tauri 已退出当前源码，迁移前版本保留在 Git 历史中。
 
 ## 代码边界
 
-- `frontend/`：Vite 前端工程；`index.html` 是入口，React/TypeScript 源码位于 `src/`，构建产物输出到仓库根目录 `dist/` 并由 Tauri 加载。
-- `frontend/src/lib/tauri.ts`：前端调用 Tauri command、读取窗口/应用 API 和订阅 `runtime-status` 事件的唯一边界。
-- `src-tauri/src/lib.rs`：Tauri command 定义、注册和应用入口。
-- `src-tauri/src/runtime.rs`：单游戏会话状态机，负责切换、等待、监控、取消和恢复。
-- `src-tauri/src/display/winapi.rs`：Windows Display API 适配，包括显示器/模式枚举、切换前测试和实际切换。
-- `src-tauri/src/model.rs` 与 `profile.rs`：前后端/持久化数据模型、旧配置兼容、输入校验与 JSON 文件读写。
-- `launcher.rs`、`detector.rs`、`process.rs`：启动 EXE/Steam/快捷方式，识别新进程，监控真正的游戏主进程。
-- `steam.rs`、`recent.rs`、`autostart.rs`、`dialog.rs`：分别负责 Steam 本地库、最近活动应用、HKCU 开机自启和 Windows 文件选择器。
+- `core/src/runtime.rs`：单游戏会话状态机，负责切换、等待、监控、取消和恢复。
+- `core/src/display/winapi.rs`：Windows Display API，模式枚举、测试、切换和结果验证。
+- `core/src/model.rs`、`profile.rs`：持久化模型、旧配置兼容、校验与 JSON 读写。
+- `core/src/launcher.rs`、`detector.rs`、`process.rs`：启动来源、识别与监控真正的游戏主进程。
+- `core/src/steam.rs`、`recent.rs`、`dialog.rs`、`icon.rs`：本机来源、文件选择和图标提取。
+- `native-ui/src/main.rs`：Slint Controller 与应用入口，复用唯一的 RuntimeManager。
+- `native-ui/src/state.rs`、`editor.rs`、`presentation.rs`：界面状态、草稿校验与呈现模型。
+- `native-ui/src/chrome.rs`、`placement.rs`：Windows 窗口关系、工作区、DPI 和几何管理。
+- `native-ui/src/runtime_reader.rs`、`icons.rs`、`preferences.rs`：后台读取、图标缓存与有序保存。
+- `native-ui/ui/`：Slint 组件、样式与动效；具体约束见 `native-ui/DESIGN.md`。
+- `native-ui/scripts/`：供用户手动运行的性能采样与汇总，不自动启动。
+- `assets/resolution-hub.ico`、`native-ui/build.rs`：EXE 图标、版本资源与 Common-Controls 清单。
+
+`core` 不得依赖界面框架、WebView 或 native-ui。状态通过 `StatusSink` 回调传出，
+界面更新必须回到 Slint 事件循环；两个窗口共享一个状态和一个运行会话。
 
 ## 显示模式安全不变量
 
-- 临时切换游戏显示模式前，必须先把恢复目标写入 `pending-restore.json`。恢复成功后才能清除该文件；恢复失败时必须保留它和手动恢复入口。
-- 优先恢复用户为该显示器配置的默认模式；它已不受支持时，退回本次切换前的实际模式。
-- 游戏会话使用 `display::switch_mode` 做临时切换；用户修改桌面默认模式时才使用 `display::switch_mode_persistent`。不要混用两者。
-- 任何切换都要先确认模式仍受当前显示器支持，保留 `CDS_TEST`，并在切换后重读当前模式进行验证。设置文件只能在持久切换验证成功后写入。
-- `RuntimeManager` 一次只允许一个会话。`generation` 用来使取消或手动恢复前的 worker 失效；新增等待循环或副作用时也要检查它。
-- 发生错误且恢复点已存在时，会话必须尝试恢复。不能因为启动失败、超时、取消或窗口关闭而把桌面留在游戏模式。
-- 启动器流程必须监控用户配置的游戏主进程，不得把 Steam、Riot、Epic 等启动器进程的退出当成游戏退出。
+- 临时切换前必须先写入 `pending-restore.json`。仅恢复成功后才能清除；失败保留恢复点和重试入口。
+- 优先恢复用户为显示器保存的默认模式；不再受支持时退回本次切换前的实际模式。
+- 游戏会话使用 `display::switch_mode` 临时切换；修改桌面默认模式才使用 `switch_mode_persistent`。
+- 保留支持性检查、`CDS_TEST` 和切换后重读验证。只有持久切换验证成功后才可保存设置。
+- RuntimeManager 一次只允许一个会话。新增循环或副作用必须遵守 `generation` 失效与取消规则。
+- 启动失败、超时、取消或关闭时，只要存在恢复点，就必须尝试恢复。
+- 监控用户配置的游戏主进程，不能把 Steam、Riot、Epic 等启动器退出当成游戏退出。
 
-`RuntimeStatus.phase` 现有取值为 `idle`、`preparing`、`switching`、`launching`、`waiting`、`running`、`restoring` 和 `error`。新增或改名状态时，同步检查 `frontend/src/` 中的呈现、取消和关闭逻辑。
+RuntimeStatus.phase 为 `idle`、`preparing`、`switching`、`launching`、`waiting`、`running`、
+`restoring` 和 `error`。调整状态时同步检查原生界面的呈现、取消和关闭逻辑。
 
-## 数据与契约
+## 数据与兼容
 
-用户数据保存在 `%APPDATA%\resolution-hub\`：
+数据位置为 `%APPDATA%\resolution-hub\`：`profiles.json`、`profile-usage.json`、`settings.json`、
+`recent-apps.json`、`pending-restore.json` 和 `native-ui-settings.json`。
 
-| 文件                     | 用途                   |
-| ------------------------ | ---------------------- |
-| `profiles.json`        | 游戏配置               |
-| `profile-usage.json`   | 托盘快捷启动使用记录   |
-| `settings.json`        | 显示器默认模式与全局偏好 |
-| `recent-apps.json`     | 最近活动应用历史       |
-| `pending-restore.json` | 显示模式异常恢复点     |
-
-- Rust 结构体对前端和 JSON 使用 `#[serde(rename_all = "camelCase")]`。修改字段、枚举或 Tauri command 参数时，同步检查 `model.rs`、`frontend/src/lib/tauri.ts` 和相关 React 调用方。
-- 已发布的 JSON 文件就是持久化契约。新增字段要使用 `#[serde(default)]`、明确的默认函数或窄范围迁移保持旧文件可读，并为兼容路径保留一个小型测试。
-- Tauri command 名保持 `snake_case`，TypeScript API 保持 `camelCase`。React 组件不得直接调用 `@tauri-apps/api` 或访问 Tauri 全局对象，统一通过 `frontend/src/lib/tauri.ts`。
-- React 默认文本渲染会转义动态值；配置、路径、Steam 或进程数据不得使用 `dangerouslySetInnerHTML`，确有需要时必须先在信任边界完成可靠净化。
-- 前端表单中的等待时间以分钟输入、Rust 中以秒保存；恢复延迟以秒输入、Rust 中以毫秒保存。修改范围或单位时必须同步前后端校验。
+- JSON 字段保持 `#[serde(rename_all = "camelCase")]`，已发布的文件格式就是兼容契约。
+- 新字段使用 serde 默认值或窄范围迁移，并对兼容路径保留有意义的小型测试。
+- 不因 Slint 暂无设置入口而删除旧版偏好、默认模式或启动记录字段。
+- 等待时间界面以分钟输入、核心以秒保存；恢复延迟界面以秒输入、核心以毫秒保存。
+- 来源目录、游戏路径和进程数据只能作为数据呈现，不拼入可执行代码或命令文本。
 
 ## 实现约定
 
-- 优先直接使用 windows-rs 和 Rust 标准库。`unsafe` 代码保持在小型 Windows 适配函数内，所有成功打开的 Win32 handle 都要在每条返回路径关闭。
-- 进程枚举、显示器 API 和注册表访问都可能因权限、进程瞬时退出或设备变化失败；保持边界处错误处理，面向用户的错误信息使用简体中文。
-- 不要在 Tauri command 主线程上运行长时间轮询。复用当前 `spawn_blocking` 或受 `generation` 管理的 worker 模式，等待必须有超时或取消出口。
-- 前端保持 React、Vite、TypeScript 和 Tailwind CSS 现有架构；优先使用已安装依赖和浏览器原生能力，不为局部效果引入新的框架或大体积依赖。
-- 自定义窗口关闭流程会在显示模式仍被接管或表单存在未保存修改时先确认，并在需要时恢复桌面模式。改动标题栏或关闭逻辑时不得绕过受保护的关闭流程。
+- 优先使用 windows-rs、标准库和已安装依赖；unsafe 限制在小型 Windows 适配函数中，所有成功打开的句柄必须关闭。
+- 设备变化、进程瞬时退出、注册表和权限错误必须在边界处理，用户错误信息使用简体中文。
+- 文件、进程、显示 API 与锁等待不阻塞 Slint 事件循环。后台结果需校验代次，迟到回调不得覆盖新状态。
+- 保留虚拟列表、模型缓存与图标按行更新，不因局部输入重建隐藏面板或整个游戏模型。
+- 受保护的关闭流程必须处理未保存草稿、正在识别和活动会话，恢复失败保留窗口与恢复点。
+- 当前尚无编辑/删除配置、托盘、自启或桌面设置入口；不要把旧版能力误报为 Slint 已实现。
 
-## 开发与验证
+## 验证与交付
 
-首次安装前端工具后启动开发模式：
+按当前约定，编译、测试和发布由推送后的 GitHub Actions 执行。
+未经用户另行要求，不在本地执行 `cargo check`、`cargo test`、`cargo build` 或 `cargo run`。
+本地可以执行不编译的 `cargo fmt --all --check`、`cargo metadata --no-deps`、锁文件检查、脚本语法解析和 `git diff --check`。
+不要恢复 npm、Vite 或 Tauri 构建流程。
 
-```powershell
-npm install
-npm run dev
-```
+远程 Windows CI 必须使用锁文件，检查 Rust 格式、运行工作区测试，并为发布构建 Slint Release EXE。
+发布验证应检查 x64 PE、GUI 子系统、图标、版本资源和嵌入的 Common-Controls v6 清单。
+测试和构建通过不等于真实显示切换或视觉验收。
 
-验证按改动侧选取，不要全跑。前端改动不触发任何 `cargo` 命令，Rust 改动不触发任何 `npm` 命令。
+界面、布局、动画和 DPI 由用户在 Windows 原生窗口中验收。
+Codex 不得使用 Playwright、浏览器截图或主动启动程序、预览/开发服务代为视觉验收。
+显示切换或关闭流程改动还需由用户覆盖正常退出、启动超时、取消、手动恢复和关闭窗口路径。
+不得自动启动游戏或操作实际显示模式。
 
-前端侧：
-
-```powershell
-npm run typecheck      # 默认
-npm test -- ProfileEditor   # 按文件或测试名过滤
-npm run build:web      # 触及构建产物或样式时
-```
-
-Rust 侧按成本升级，停在能证伪本次改动的最低一档：
-
-```powershell
-cargo fmt --check                  # 秒级，先跑
-cargo check                        # 不做 codegen/link，签名与类型改动的默认档
-cargo test --lib model::           # 改动逻辑有测试覆盖时，按模块过滤
-cargo test                         # 跨模块改动，或改了测试代码
-cargo build                        # 仅在触及 Windows API 边界或链接配置时
-```
-
-升档需要给出理由。纯重构没有行为变化时，`cargo check` 通过即为充分证明。`cargo` 编译在持续输出时不要中断——Tauri + windows-rs 冷编译 5-15 分钟属正常，产物是增量累积的，杀掉重跑只会更慢。
-
-根据改动范围扩大验证：
-
-- 前端样式、布局和视觉效果统一由用户自行验证。Codex 不得使用 Playwright（包括 CLI 和 MCP）、浏览器自动化截图或主动启动前端预览/开发服务进行视觉验收；仅执行 `npm run typecheck`、`npm test`、`npm run build:web` 等非视觉检查，并在交付中明确说明未进行视觉验收。
-- 只改文档：先运行 `git diff --check`。样式改动还需运行 `npm run build:web`；760x560 最小尺寸和 980x720 默认尺寸由用户在 Tauri 窗口中自行检查，Codex 不得代为执行。
-- 改动 Rust 模型、配置、启动或进程逻辑：运行 `cargo fmt --check` 和 `cargo check`；改动逻辑有测试覆盖时补 `cargo test --lib <module>::`；影响 Windows API 边界时才运行 `cargo build`。
-- 改动显示切换、恢复、取消或窗口关闭：自动测试不能证明真实硬件行为，还要在 Windows 上手动验证正常退出、启动超时、取消等待、手动恢复和关闭窗口路径。
-- 改动 Tauri command：除 Rust 侧检查外，运行 `npm run typecheck` 和 `npm run build:web`，并核对 `generate_handler!` 与 `frontend/src/lib/tauri.ts`。
-- `npm run build`（tauri build，release profile）会重编整棵依赖树且与 dev profile 不共享产物，只能用于发布，绝不作为验证手段；只需要 Release 可执行文件时使用 `npm run build -- --no-bundle`。
-
-版本发布时保持 `src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`、`Cargo.lock` 和关于弹窗中的可见版本一致。
+版本统一修改根 `Cargo.toml` 的 `workspace.package.version`，同步锁文件与显示版本。
+保留用户数据、本地缓存和不属于本次任务的文件，不使用广泛清理或回退。

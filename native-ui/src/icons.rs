@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, io::Cursor, sync::mpsc};
 
-use resolution_hub_lib::{
+use resolution_hub_core::{
     icon,
     model::{ApplicationIcon, ApplicationIconRequest, GameProfile, LaunchType},
 };

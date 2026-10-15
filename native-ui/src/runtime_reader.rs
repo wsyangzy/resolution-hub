@@ -4,7 +4,7 @@ use std::sync::{
     mpsc,
 };
 
-use resolution_hub_lib::{
+use resolution_hub_core::{
     model::{PendingRestore, RuntimeStatus},
     profile,
     runtime::RuntimeManager,

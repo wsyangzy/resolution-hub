@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use resolution_hub_lib::model::{GameProfile, PendingRestore, RuntimeStatus};
+use resolution_hub_core::model::{GameProfile, PendingRestore, RuntimeStatus};
 
 use crate::editor::{DetectionAction, DetectionResult, EditorState};
 use crate::preferences::ViewMode;
@@ -571,7 +571,7 @@ impl AppState {
 mod tests {
     use super::*;
     use crate::editor::{DisplayChoice, EditorCatalog, FileChoice};
-    use resolution_hub_lib::model::{DisplayInfo, DisplayMode, LaunchType};
+    use resolution_hub_core::model::{DisplayInfo, DisplayMode, LaunchType};
 
     fn status(phase: &str, can_restore: bool) -> RuntimeStatus {
         RuntimeStatus {
@@ -1099,7 +1099,7 @@ mod tests {
     }
 
     fn detected_process() -> DetectionResult {
-        DetectionResult::Candidates(vec![resolution_hub_lib::model::RecentApplication {
+        DetectionResult::Candidates(vec![resolution_hub_core::model::RecentApplication {
             pid: 123,
             name: "实际游戏".into(),
             executable: r"C:\Games\actual-game.exe".into(),

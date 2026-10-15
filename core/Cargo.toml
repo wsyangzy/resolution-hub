@@ -1,19 +1,11 @@
 [package]
-name = "resolution-hub"
-version = "0.1.1"
-edition = "2024"
-license = "MIT"
-
-[lib]
-name = "resolution_hub_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
-[[bin]]
-name = "resolution-hub"
-path = "src/main.rs"
+name = "resolution-hub-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 keyvalues-parser = "0.2.4"
@@ -30,6 +22,3 @@ windows = { version = "0.62", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging"
 ] }
-
-[build-dependencies]
-tauri-build = { version = "2", features = [] }

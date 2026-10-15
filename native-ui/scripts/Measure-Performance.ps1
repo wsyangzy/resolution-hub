@@ -1,10 +1,12 @@
 param(
+    [Parameter(Mandatory = $true)]
+    [string]$Executable,
     [string]$LogDirectory = (Join-Path ([System.IO.Path]::GetTempPath()) ('resolution-hub-perf-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))),
     [switch]$DisableAnimations
 )
 
 $ErrorActionPreference = 'Stop'
-$exePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\target\debug\resolution-hub-native-ui.exe'))
+$exePath = (Resolve-Path -LiteralPath $Executable).Path
 if (!(Test-Path -LiteralPath $exePath -PathType Leaf)) { throw "Executable not found: $exePath" }
 if (Get-Process -Name resolution-hub-native-ui,resolution-hub -ErrorAction SilentlyContinue) {
     throw 'End the game session and exit the existing Resolution Hub application before measuring.'
